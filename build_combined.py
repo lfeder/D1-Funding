@@ -15,7 +15,7 @@ df = pd.read_parquet(PARQUET)
 df = df[df["funding_event"] == True].copy()
 df["funding_rate_bps"] = df["funding_rate_bps"] / 100  # raw → true bps
 
-DEX = {"Hyperliquid", "Lighter", "Aster"}
+EXCHANGES = ["Binance", "OKX", "Bybit", "Aster", "Hyperliquid", "Lighter"]
 
 def normalize_coin(sym):
     for suffix in ["-USDT-SWAP", "-USDC", "-USD", "USDT"]:
@@ -33,34 +33,27 @@ coins = sorted(df["coin"].unique())
 timestamps = sorted(df["ts8"].unique())
 ts_labels = [t.strftime("%b %d %H:%M") for t in pd.to_datetime(timestamps)]
 
-def compute_spreads(sub):
-    """Return 2D list [ts_idx][coin_idx] of spreads, plus median dict."""
-    data = [[None] * len(coins) for _ in range(len(timestamps))]
-    ts_idx = {t: i for i, t in enumerate(timestamps)}
-    coin_idx = {c: i for i, c in enumerate(coins)}
+ts_idx = {t: i for i, t in enumerate(timestamps)}
+coin_idx = {c: i for i, c in enumerate(coins)}
+
+# Build per-exchange rate grids: RATES[exch][ts][coin] = rate or null
+rates_by_exch = {}
+for exch in EXCHANGES:
+    grid = [[None] * len(coins) for _ in range(len(timestamps))]
+    sub = df[df["exchange"] == exch]
     for (ts8, coin), g in sub.groupby(["ts8", "coin"]):
-        if len(g["exchange"].unique()) < 2:
-            continue
-        spread = round(g["funding_rate_bps"].max() - g["funding_rate_bps"].min(), 2)
-        data[ts_idx[ts8]][coin_idx[coin]] = spread
-
-    meds = {}
-    for ci, coin in enumerate(coins):
-        vals = [data[r][ci] for r in range(len(timestamps)) if data[r][ci] is not None]
-        meds[coin] = round(float(np.median(vals)), 1) if vals else None
-    return data, meds
-
-data_all, meds_all = compute_spreads(df)
-data_dex, meds_dex = compute_spreads(df[df["exchange"].isin(DEX)])
+        if ts8 in ts_idx and coin in coin_idx:
+            grid[ts_idx[ts8]][coin_idx[coin]] = round(float(g["funding_rate_bps"].iloc[0]), 2)
+    rates_by_exch[exch] = grid
 
 grid_data_js = (
     f"const COINS = {json.dumps(coins)};\n"
     f"const TIMESTAMPS = {json.dumps(ts_labels)};\n"
-    f"const DATA = {{all:{json.dumps(data_all)},dex:{json.dumps(data_dex)}}};\n"
-    f"const MEDS = {{all:{json.dumps(meds_all)},dex:{json.dumps(meds_dex)}}};\n"
+    f"const EXCHANGES_LIST = {json.dumps(EXCHANGES)};\n"
+    f"const RATES = {json.dumps(rates_by_exch)};\n"
 )
 
-print(f"Grid: {len(coins)} coins x {len(timestamps)} timestamps")
+print(f"Grid: {len(coins)} coins x {len(timestamps)} timestamps x {len(EXCHANGES)} exchanges")
 
 # ── HTML template ────────────────────────────────────────────────────────────
 HTML_TOP = r"""<!DOCTYPE html>
@@ -131,11 +124,7 @@ HTML_TOP = r"""<!DOCTYPE html>
   <h2>Max Cross-Exchange Spread by Coin &mdash; 8h Windows</h2>
   <p class="sub">spread_bps = max(rate) &minus; min(rate) across exchanges &nbsp;|&nbsp; 00:00 / 08:00 / 16:00 UTC &nbsp;|&nbsp; click a column or cell to drill down</p>
   <div class="toolbar">
-    <div class="toggle-group">
-      <button class="toggle-btn active" id="btn-all" onclick="setMode('all')">CEX + DEX</button>
-      <button class="toggle-btn" id="btn-dex" onclick="setMode('dex')">DEX only</button>
-    </div>
-    <span class="mode-label" id="mode-label">Binance, OKX, Bybit, Hyperliquid, Lighter, Aster</span>
+    <div class="toggle-group" id="exch-toggles"></div>
   </div>
   <div class="wrap">
     <table><thead id="thead"></thead><tbody id="tbody"></tbody></table>
@@ -170,11 +159,7 @@ HTML_TOP = r"""<!DOCTYPE html>
 """
 
 HTML_BOTTOM = r"""
-const MODE_LABELS = {
-  all: 'Binance, OKX, Bybit, Hyperliquid, Lighter, Aster',
-  dex: 'Hyperliquid, Lighter, Aster'
-};
-let currentMode = 'all';
+let activeExchanges = new Set(EXCHANGES_LIST);
 
 function cellStyle(val) {
   if (val === null)  return ['#f5f5f0', '#bbb'];
@@ -184,8 +169,44 @@ function cellStyle(val) {
   return              ['#c0392b', '#fff'];
 }
 
-function sortedCoins(mode) {
-  const meds = MEDS[mode];
+function computeGrid() {
+  const exchs = [...activeExchanges];
+  const spreads = [];
+  const coinIdx = {};
+  COINS.forEach((c, i) => coinIdx[c] = i);
+  for (let r = 0; r < TIMESTAMPS.length; r++) {
+    const row = new Array(COINS.length).fill(null);
+    for (let ci = 0; ci < COINS.length; ci++) {
+      const vals = [];
+      for (const e of exchs) {
+        const v = RATES[e][r][ci];
+        if (v !== null) vals.push(v);
+      }
+      if (vals.length >= 2) {
+        row[ci] = Math.round((Math.max(...vals) - Math.min(...vals)) * 100) / 100;
+      }
+    }
+    spreads.push(row);
+  }
+  // medians
+  const meds = {};
+  for (let ci = 0; ci < COINS.length; ci++) {
+    const vals = [];
+    for (let r = 0; r < TIMESTAMPS.length; r++) {
+      if (spreads[r][ci] !== null) vals.push(spreads[r][ci]);
+    }
+    if (vals.length) {
+      vals.sort((a, b) => a - b);
+      const mid = Math.floor(vals.length / 2);
+      meds[COINS[ci]] = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    } else {
+      meds[COINS[ci]] = null;
+    }
+  }
+  return { spreads, meds };
+}
+
+function sortedCoins(meds) {
   return [...COINS].sort((a, b) => {
     const ma = meds[a] !== null ? meds[a] : -Infinity;
     const mb = meds[b] !== null ? meds[b] : -Infinity;
@@ -193,49 +214,60 @@ function sortedCoins(mode) {
   });
 }
 
-function buildHeader(mode, coinOrder) {
-  let html = '<tr><th class="ts">Timestamp</th><th style="background:#d0d0c8">MAX</th>';
-  for (const coin of coinOrder) {
-    html += `<th onclick="openChart('${coin}')">${coin}</th>`;
-  }
-  return html + '</tr>';
-}
-
-function buildBody(mode, coinOrder) {
-  const data = DATA[mode];
+function buildGrid() {
+  const { spreads, meds } = computeGrid();
+  const coinOrder = sortedCoins(meds);
   const coinIdx = {};
   COINS.forEach((c, i) => coinIdx[c] = i);
-  let html = '';
+
+  let hdr = '<tr><th class="ts">Timestamp</th><th style="background:#d0d0c8">MAX</th>';
+  for (const coin of coinOrder) {
+    hdr += `<th onclick="openChart('${coin}')">${coin}</th>`;
+  }
+  hdr += '</tr>';
+
+  let body = '';
   for (let r = 0; r < TIMESTAMPS.length; r++) {
-    // compute row max across all coins
     let rowMax = null;
     for (const coin of coinOrder) {
-      const v = data[r][coinIdx[coin]];
+      const v = spreads[r][coinIdx[coin]];
       if (v !== null && (rowMax === null || v > rowMax)) rowMax = v;
     }
     const [maxBg, maxFg] = cellStyle(rowMax);
     const maxTxt = rowMax !== null ? Math.round(rowMax) : '';
-    html += `<tr><td class="ts">${TIMESTAMPS[r]}</td>`;
-    html += `<td style="background:${maxBg};color:${maxFg};font-weight:bold;border-right:2px solid #999">${maxTxt}</td>`;
+    body += `<tr><td class="ts">${TIMESTAMPS[r]}</td>`;
+    body += `<td style="background:${maxBg};color:${maxFg};font-weight:bold;border-right:2px solid #999">${maxTxt}</td>`;
     for (const coin of coinOrder) {
-      const val = data[r][coinIdx[coin]];
+      const val = spreads[r][coinIdx[coin]];
       const [bg, fg] = cellStyle(val);
       const txt = val !== null ? Math.round(val) : '';
-      html += `<td style="background:${bg};color:${fg}" onclick="openChart('${coin}')">${txt}</td>`;
+      body += `<td style="background:${bg};color:${fg}" onclick="openChart('${coin}')">${txt}</td>`;
     }
-    html += '</tr>';
+    body += '</tr>';
   }
-  return html;
+  document.getElementById('thead').innerHTML = hdr;
+  document.getElementById('tbody').innerHTML = body;
 }
 
-function setMode(mode) {
-  currentMode = mode;
-  document.getElementById('btn-all').classList.toggle('active', mode === 'all');
-  document.getElementById('btn-dex').classList.toggle('active', mode === 'dex');
-  document.getElementById('mode-label').textContent = MODE_LABELS[mode];
-  const coinOrder = sortedCoins(mode);
-  document.getElementById('thead').innerHTML = buildHeader(mode, coinOrder);
-  document.getElementById('tbody').innerHTML = buildBody(mode, coinOrder);
+function initExchangeToggles() {
+  const container = document.getElementById('exch-toggles');
+  for (const exch of EXCHANGES_LIST) {
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn active';
+    btn.textContent = exch;
+    btn.dataset.exch = exch;
+    btn.onclick = function() {
+      if (activeExchanges.has(exch)) {
+        activeExchanges.delete(exch);
+        btn.classList.remove('active');
+      } else {
+        activeExchanges.add(exch);
+        btn.classList.add('active');
+      }
+      buildGrid();
+    };
+    container.appendChild(btn);
+  }
 }
 
 // ===== CHART =====
@@ -412,7 +444,7 @@ function renderChart() {
 
 async function openChart(coin) {
   document.getElementById('chart-modal').classList.add('visible');
-  document.getElementById('venueFilter').value = currentMode === 'dex' ? 'dex' : 'all';
+  document.getElementById('venueFilter').value = 'all';
   document.getElementById('coin').value = coin;
   await loadCoinChart();
 }
@@ -423,7 +455,8 @@ function closeChart() {
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChart(); });
 
-setMode('all');
+initExchangeToggles();
+buildGrid();
 initChart();
 </script>
 </body>
