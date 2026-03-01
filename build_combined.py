@@ -309,9 +309,7 @@ async function initChart() {
   const resp = await fetch(DATA_BASE + 'manifest.json');
   chartManifest = await resp.json();
   const coinSel = document.getElementById('coin');
-  Object.keys(chartManifest).sort().forEach(c => {
-    coinSel.add(new Option(c, c));
-  });
+  Object.keys(chartManifest).sort().forEach(c => coinSel.add(new Option(c, c)));
   coinSel.addEventListener('change', loadCoinChart);
   document.getElementById('rateType').addEventListener('change', renderChart);
   initChartExchangeToggles();
@@ -389,14 +387,14 @@ function renderChart() {
       traces.push({
         x: settTs, y: settRate, type: 'scattergl', mode: 'markers',
         name: label + ' settle', marker: { color, size: 5, symbol: 'diamond' },
-        legendgroup: exch, showlegend: false, visible: vis, xaxis: 'x', yaxis: 'y',
+        legendgroup: exch, showlegend: false, xaxis: 'x', yaxis: 'y',
         hovertemplate: '%{y:.1f}<extra>' + label + ' settle</extra>',
       });
     } else {
       traces.push({
         x: settTs, y: settRate, type: 'scattergl', mode: 'lines+markers',
         name: label, line: { color, width: 1.5 }, marker: { color, size: 4 },
-        visible: vis, xaxis: 'x', yaxis: 'y',
+        xaxis: 'x', yaxis: 'y',
         hovertemplate: '%{y:.1f}<extra>' + label + '</extra>',
       });
     }

@@ -21,7 +21,6 @@ def normalize_coin(sym):
 
 # Build coin -> { exchange: [ [ts, rate, event], ... ] }
 coin_data = {}
-coin_exchanges = {}  # coin -> list of exchange names
 
 for (exch, sym), grp in df.groupby(["exchange", "symbol"]):
     ts = (grp["timestamp"].astype("int64") // 10**6).tolist()
@@ -31,7 +30,6 @@ for (exch, sym), grp in df.groupby(["exchange", "symbol"]):
 
     coin = normalize_coin(sym)
     coin_data.setdefault(coin, {})[exch] = rows
-    coin_exchanges.setdefault(coin, []).append(exch)
 
 # Write one JSON per coin
 for coin in sorted(coin_data):
@@ -42,7 +40,7 @@ for coin in sorted(coin_data):
     exchs = sorted(coin_data[coin].keys())
     print(f"  {fname} ({len(exchs)} exchanges, {total_rows} rows)")
 
-# Manifest: coin -> { exchanges: [...] }
+# Manifest: coin -> [exchanges]
 manifest = {}
 for coin in sorted(coin_data):
     manifest[coin] = sorted(coin_data[coin].keys())
