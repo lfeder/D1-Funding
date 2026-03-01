@@ -189,6 +189,7 @@ const CEX_SET = new Set(['Binance', 'OKX', 'Bybit']);
 
 let chartManifest = {};
 let coinChartData = {};
+let hiddenExchanges = new Set();
 
 async function initChart() {
   const resp = await fetch(DATA_BASE + 'manifest.json');
@@ -208,6 +209,7 @@ async function loadCoinChart() {
   const coin = document.getElementById('coin').value;
   if (!coin || !chartManifest[coin]) return;
   document.getElementById('status').textContent = 'Loading...';
+  hiddenExchanges = new Set();
   const resp = await fetch(DATA_BASE + coin + '.json');
   coinChartData = await resp.json();
 
@@ -236,6 +238,7 @@ function renderChart() {
 
   const visibleExchanges = EXCHANGES_ORDER.filter(e => {
     if (!coinChartData[e]) return false;
+    if (hiddenExchanges.has(e)) return false;
     if (venueFilter === 'dex') return DEX_SET.has(e);
     if (venueFilter === 'cex') return CEX_SET.has(e);
     return true;
@@ -345,6 +348,19 @@ function renderChart() {
     margin: { t: 60, b: 30, l: 60, r: 20 },
     hovermode: 'x unified',
   }, { responsive: true, scrollZoom: true });
+
+  const chartEl = document.getElementById('chart');
+  chartEl.on('plotly_legendclick', function(d) {
+    const clickedName = d.data[d.curveNumber].name;
+    // Extract exchange name (strip interval suffix and " settle")
+    const exch = EXCHANGES_ORDER.find(e => clickedName.startsWith(e));
+    if (exch) {
+      if (hiddenExchanges.has(exch)) hiddenExchanges.delete(exch);
+      else hiddenExchanges.add(exch);
+      renderChart();
+    }
+    return false; // prevent default Plotly toggle
+  });
 }
 
 async function openChart(coin) {
