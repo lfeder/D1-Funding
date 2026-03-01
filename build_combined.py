@@ -108,6 +108,12 @@ HTML_TOP = r"""<!DOCTYPE html>
     background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
     border-radius: 6px; padding: 6px 10px; font-size: 14px; font-family: sans-serif;
   }
+  #modal-header .toggle-group { border-color: #30363d; }
+  #modal-header .toggle-btn {
+    background: #21262d; color: #8b949e; border-color: #30363d; font-size: 12px; padding: 5px 10px;
+  }
+  #modal-header .toggle-btn.active { background: #3a6ea8; color: #fff; }
+  #modal-header .toggle-btn:hover:not(.active) { background: #30363d; }
   .mfield { display: flex; flex-direction: column; gap: 4px; }
   #close-btn {
     margin-left: auto; background: #da3633; color: #fff; border: none;
@@ -143,11 +149,7 @@ HTML_TOP = r"""<!DOCTYPE html>
     </div>
     <div class="mfield">
       <label>Venues</label>
-      <select id="venueFilter">
-        <option value="all">All (CEX + DEX)</option>
-        <option value="dex">DEX Only</option>
-        <option value="cex">CEX Only</option>
-      </select>
+      <div class="toggle-group" id="chart-exch-toggles"></div>
     </div>
     <button id="close-btn" onclick="closeChart()">&times; Close</button>
   </div>
@@ -277,12 +279,31 @@ const EXCHANGE_COLORS = {
   Aster: '#a78bfa', Hyperliquid: '#4ade80', Lighter: '#38bdf8',
 };
 const EXCHANGES_ORDER = ['Binance', 'OKX', 'Bybit', 'Aster', 'Hyperliquid', 'Lighter'];
-const DEX_SET = new Set(['Hyperliquid', 'Lighter', 'Aster']);
-const CEX_SET = new Set(['Binance', 'OKX', 'Bybit']);
 
 let chartManifest = {};
 let coinChartData = {};
-let hiddenExchanges = new Set();
+let chartActiveExchanges = new Set(EXCHANGES_ORDER);
+
+function initChartExchangeToggles() {
+  const container = document.getElementById('chart-exch-toggles');
+  for (const exch of EXCHANGES_ORDER) {
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn active';
+    btn.textContent = exch;
+    btn.dataset.exch = exch;
+    btn.onclick = function() {
+      if (chartActiveExchanges.has(exch)) {
+        chartActiveExchanges.delete(exch);
+        btn.classList.remove('active');
+      } else {
+        chartActiveExchanges.add(exch);
+        btn.classList.add('active');
+      }
+      renderChart();
+    };
+    container.appendChild(btn);
+  }
+}
 
 async function initChart() {
   const resp = await fetch(DATA_BASE + 'manifest.json');
@@ -293,14 +314,13 @@ async function initChart() {
   });
   coinSel.addEventListener('change', loadCoinChart);
   document.getElementById('rateType').addEventListener('change', renderChart);
-  document.getElementById('venueFilter').addEventListener('change', renderChart);
+  initChartExchangeToggles();
 }
 
 async function loadCoinChart() {
   const coin = document.getElementById('coin').value;
   if (!coin || !chartManifest[coin]) return;
   document.getElementById('status').textContent = 'Loading...';
-  hiddenExchanges = new Set();
   const resp = await fetch(DATA_BASE + coin + '.json');
   coinChartData = await resp.json();
 
@@ -313,24 +333,18 @@ async function loadCoinChart() {
 function renderChart() {
   if (!Object.keys(coinChartData).length) return;
   const coin = document.getElementById('coin').value;
-  const venueFilter = document.getElementById('venueFilter').value;
   const showBoth = document.getElementById('rateType').value === 'both';
 
-  const eligibleExchanges = EXCHANGES_ORDER.filter(e => {
-    if (!coinChartData[e]) return false;
-    if (venueFilter === 'dex') return DEX_SET.has(e);
-    if (venueFilter === 'cex') return CEX_SET.has(e);
-    return true;
-  });
+  const visibleExchanges = EXCHANGES_ORDER.filter(e =>
+    coinChartData[e] && chartActiveExchanges.has(e)
+  );
 
   const traces = [];
   const spreadByTs = {};  // ts -> { exch: rate }
 
-  for (const exch of eligibleExchanges) {
+  for (const exch of visibleExchanges) {
     const color = EXCHANGE_COLORS[exch] || '#888';
     const rows = coinChartData[exch];
-    const hidden = hiddenExchanges.has(exch);
-    const vis = hidden ? 'legendonly' : true;
 
     // Detect settlement interval
     const allSettTimes = [];
@@ -353,14 +367,12 @@ function renderChart() {
           if (h === 0 || h === 8 || h === 16) {
             settTs.push(new Date(t));
             settRate.push(r);
-            if (!hidden) {
-              if (!spreadByTs[t]) spreadByTs[t] = {};
-              spreadByTs[t][exch] = r;
-            }
+            if (!spreadByTs[t]) spreadByTs[t] = {};
+            spreadByTs[t][exch] = r;
           }
         }
       }
-      if (showBoth && !hidden) {
+      if (showBoth) {
         if (!spreadByTs[t]) spreadByTs[t] = {};
         spreadByTs[t][exch] = r;
       }
@@ -371,8 +383,7 @@ function renderChart() {
       for (const [t, r, ev] of rows) { implTs.push(new Date(t)); implRate.push(r); }
       traces.push({
         x: implTs, y: implRate, type: 'scattergl', mode: 'lines',
-        name: label, line: { color, width: 1 }, visible: vis,
-        legendgroup: exch, xaxis: 'x', yaxis: 'y',
+        name: label, line: { color, width: 1 },        legendgroup: exch, xaxis: 'x', yaxis: 'y',
         hovertemplate: '%{y:.1f}<extra>' + label + '</extra>',
       });
       traces.push({
@@ -429,22 +440,12 @@ function renderChart() {
   }, { responsive: true, scrollZoom: true });
 
   const chartEl = document.getElementById('chart');
-  chartEl.on('plotly_legendclick', function(d) {
-    const clickedName = d.data[d.curveNumber].name;
-    // Extract exchange name (strip interval suffix and " settle")
-    const exch = EXCHANGES_ORDER.find(e => clickedName.startsWith(e));
-    if (exch) {
-      if (hiddenExchanges.has(exch)) hiddenExchanges.delete(exch);
-      else hiddenExchanges.add(exch);
-      renderChart();
-    }
-    return false; // prevent default Plotly toggle
-  });
+  chartEl.on('plotly_legendclick', () => false);
+  chartEl.on('plotly_legenddoubleclick', () => false);
 }
 
 async function openChart(coin) {
   document.getElementById('chart-modal').classList.add('visible');
-  document.getElementById('venueFilter').value = 'all';
   document.getElementById('coin').value = coin;
   await loadCoinChart();
 }
