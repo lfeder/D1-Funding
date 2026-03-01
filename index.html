@@ -80,8 +80,6 @@
 <div id="chart-modal">
   <div id="modal-header">
     <div class="mfield"><label>Coin</label><select id="coin"></select></div>
-    <div class="mfield"><label>From</label><input type="date" id="dateFrom"></div>
-    <div class="mfield"><label>To</label><input type="date" id="dateTo"></div>
     <div class="mfield">
       <label>Show</label>
       <select id="rateType">
@@ -199,8 +197,6 @@ async function initChart() {
     coinSel.add(new Option(c, c));
   });
   coinSel.addEventListener('change', loadCoinChart);
-  document.getElementById('dateFrom').addEventListener('change', renderChart);
-  document.getElementById('dateTo').addEventListener('change', renderChart);
   document.getElementById('rateType').addEventListener('change', renderChart);
   document.getElementById('venueFilter').addEventListener('change', renderChart);
 }
@@ -213,15 +209,6 @@ async function loadCoinChart() {
   const resp = await fetch(DATA_BASE + coin + '.json');
   coinChartData = await resp.json();
 
-  let minTs = Infinity, maxTs = -Infinity;
-  for (const rows of Object.values(coinChartData)) {
-    if (rows.length) {
-      minTs = Math.min(minTs, rows[0][0]);
-      maxTs = Math.max(maxTs, rows[rows.length - 1][0]);
-    }
-  }
-  document.getElementById('dateFrom').value = new Date(minTs).toISOString().slice(0, 10);
-  document.getElementById('dateTo').value = new Date(maxTs).toISOString().slice(0, 10);
   renderChart();
   const totalRows = Object.values(coinChartData).reduce((s, r) => s + r.length, 0);
   document.getElementById('status').textContent =
@@ -231,14 +218,11 @@ async function loadCoinChart() {
 function renderChart() {
   if (!Object.keys(coinChartData).length) return;
   const coin = document.getElementById('coin').value;
-  const fromDate = new Date(document.getElementById('dateFrom').value).getTime();
-  const toDate = new Date(document.getElementById('dateTo').value + 'T23:59:59Z').getTime();
   const venueFilter = document.getElementById('venueFilter').value;
   const showBoth = document.getElementById('rateType').value === 'both';
 
-  const visibleExchanges = EXCHANGES_ORDER.filter(e => {
+  const eligibleExchanges = EXCHANGES_ORDER.filter(e => {
     if (!coinChartData[e]) return false;
-    if (hiddenExchanges.has(e)) return false;
     if (venueFilter === 'dex') return DEX_SET.has(e);
     if (venueFilter === 'cex') return CEX_SET.has(e);
     return true;
@@ -247,9 +231,11 @@ function renderChart() {
   const traces = [];
   const spreadByTs = {};  // ts -> { exch: rate }
 
-  for (const exch of visibleExchanges) {
+  for (const exch of eligibleExchanges) {
     const color = EXCHANGE_COLORS[exch] || '#888';
-    const rows = coinChartData[exch].filter(r => r[0] >= fromDate && r[0] <= toDate);
+    const rows = coinChartData[exch];
+    const hidden = hiddenExchanges.has(exch);
+    const vis = hidden ? 'legendonly' : true;
 
     // Detect settlement interval
     const allSettTimes = [];
@@ -268,45 +254,43 @@ function renderChart() {
           settTs.push(new Date(t));
           settRate.push(r);
         } else {
-          // Settlement only: restrict to 00/08/16 UTC
           const h = new Date(t).getUTCHours();
           if (h === 0 || h === 8 || h === 16) {
             settTs.push(new Date(t));
             settRate.push(r);
-            if (!spreadByTs[t]) spreadByTs[t] = {};
-            spreadByTs[t][exch] = r;
+            if (!hidden) {
+              if (!spreadByTs[t]) spreadByTs[t] = {};
+              spreadByTs[t][exch] = r;
+            }
           }
         }
       }
-      // Collect for spread: all points in "both" mode
-      if (showBoth) {
+      if (showBoth && !hidden) {
         if (!spreadByTs[t]) spreadByTs[t] = {};
         spreadByTs[t][exch] = r;
       }
     }
 
     if (showBoth) {
-      // 3-min implied line
       const implTs = [], implRate = [];
       for (const [t, r, ev] of rows) { implTs.push(new Date(t)); implRate.push(r); }
       traces.push({
         x: implTs, y: implRate, type: 'scattergl', mode: 'lines',
-        name: label, line: { color, width: 1 },
+        name: label, line: { color, width: 1 }, visible: vis,
         legendgroup: exch, xaxis: 'x', yaxis: 'y',
         hovertemplate: '%{y:.1f}<extra>' + label + '</extra>',
       });
       traces.push({
         x: settTs, y: settRate, type: 'scattergl', mode: 'markers',
         name: label + ' settle', marker: { color, size: 5, symbol: 'diamond' },
-        legendgroup: exch, showlegend: false, xaxis: 'x', yaxis: 'y',
+        legendgroup: exch, showlegend: false, visible: vis, xaxis: 'x', yaxis: 'y',
         hovertemplate: '%{y:.1f}<extra>' + label + ' settle</extra>',
       });
     } else {
-      // Settlement only (8h) — connected line + markers
       traces.push({
         x: settTs, y: settRate, type: 'scattergl', mode: 'lines+markers',
         name: label, line: { color, width: 1.5 }, marker: { color, size: 4 },
-        xaxis: 'x', yaxis: 'y',
+        visible: vis, xaxis: 'x', yaxis: 'y',
         hovertemplate: '%{y:.1f}<extra>' + label + '</extra>',
       });
     }
