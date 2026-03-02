@@ -283,6 +283,7 @@ const EXCHANGES_ORDER = ['Binance', 'OKX', 'Bybit', 'Aster', 'Hyperliquid', 'Lig
 let chartManifest = {};
 let coinChartData = {};
 let chartActiveExchanges = new Set(EXCHANGES_ORDER);
+let chartInitialized = false;
 
 function initChartExchangeToggles() {
   const container = document.getElementById('chart-exch-toggles');
@@ -319,6 +320,7 @@ async function loadCoinChart() {
   const coin = document.getElementById('coin').value;
   if (!coin || !chartManifest[coin]) return;
   document.getElementById('status').textContent = 'Loading...';
+  chartInitialized = false;
   const resp = await fetch(DATA_BASE + coin + '.json');
   coinChartData = await resp.json();
 
@@ -424,7 +426,7 @@ function renderChart() {
     text: spreadText, hovertemplate: '%{text}<extra></extra>',
   });
 
-  Plotly.newPlot('chart', traces, {
+  const layout = {
     title: { text: `${coin} — Funding Rates Across Exchanges`, font: { color: '#c9d1d9', size: 16 } },
     paper_bgcolor: '#0d1117', plot_bgcolor: '#0d1117',
     grid: { rows: 2, columns: 1, subplots: [['xy'], ['x2y2']], roworder: 'top to bottom' },
@@ -435,11 +437,23 @@ function renderChart() {
     legend: { font: { color: '#c9d1d9' }, bgcolor: 'rgba(0,0,0,0)', orientation: 'h', y: 1.02, x: 0.5, xanchor: 'center' },
     margin: { t: 60, b: 30, l: 60, r: 20 },
     hovermode: 'x unified',
-  }, { responsive: true, scrollZoom: true });
+  };
 
   const chartEl = document.getElementById('chart');
-  chartEl.on('plotly_legendclick', () => false);
-  chartEl.on('plotly_legenddoubleclick', () => false);
+  if (!chartInitialized) {
+    Plotly.newPlot(chartEl, traces, layout, { responsive: true, scrollZoom: true });
+    chartEl.on('plotly_legendclick', () => false);
+    chartEl.on('plotly_legenddoubleclick', () => false);
+    chartInitialized = true;
+  } else {
+    // Preserve current zoom by merging existing axis ranges
+    const cur = chartEl.layout;
+    if (cur.xaxis && cur.xaxis.range) layout.xaxis.range = cur.xaxis.range;
+    if (cur.yaxis && cur.yaxis.range) layout.yaxis.range = cur.yaxis.range;
+    if (cur.xaxis2 && cur.xaxis2.range) layout.xaxis2.range = cur.xaxis2.range;
+    if (cur.yaxis2 && cur.yaxis2.range) layout.yaxis2.range = cur.yaxis2.range;
+    Plotly.react(chartEl, traces, layout);
+  }
 }
 
 async function openChart(coin) {
