@@ -54,4 +54,19 @@ with open(os.path.join(OUT_DIR, "grid.json"), "w") as f:
     json.dump(grid_obj, f, separators=(",", ":"))
 
 print(f"Grid: {len(coins)} coins x {len(timestamps)} timestamps x {len(EXCHANGES)} exchanges")
+
+# ── Rebuild manifest from existing per-coin JSON files ──────────────────────
+manifest = {}
+for fname in sorted(os.listdir(OUT_DIR)):
+    if fname.endswith(".json") and fname not in ("manifest.json", "grid.json"):
+        coin = fname[:-5]
+        fpath = os.path.join(OUT_DIR, fname)
+        with open(fpath, "r") as f:
+            data = json.load(f)
+        manifest[coin] = sorted(data.keys())
+
+with open(os.path.join(OUT_DIR, "manifest.json"), "w") as f:
+    json.dump(manifest, f, indent=2, sort_keys=True)
+
+print(f"Manifest: {len(manifest)} coins")
 print("Done")
