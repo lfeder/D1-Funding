@@ -41,7 +41,7 @@
   .exch-label .ecov { text-align: right; padding-right: 12px; font-size: 10px; }
   .exch-bar-wrap {
     flex: 1; height: 14px; position: relative; background: #d4e6d4;
-    border-radius: 2px; overflow: hidden;
+    border-radius: 2px; overflow: visible;
   }
   .exch-bar-wrap .gap-mark {
     position: absolute; top: 0; height: 100%; background: rgba(192,57,43,0.6); min-width: 1px;
@@ -89,7 +89,7 @@
   }
   .coin-label .name { font-weight: bold; }
   .coin-label .cov { text-align: right; padding-right: 12px; font-size: 10px; }
-  .bar-wrap { flex: 1; height: 14px; position: relative; background: #d4e6d4; border-radius: 2px; overflow: hidden; }
+  .bar-wrap { flex: 1; height: 14px; position: relative; background: #d4e6d4; border-radius: 2px; overflow: visible; }
   .gap-mark { position: absolute; top: 0; height: 100%; background: #c0392b; min-width: 1px; }
   .listing-mark { position: absolute; top: 0; height: 100%; background: #bbb; min-width: 1px; }
 
@@ -106,6 +106,16 @@
   .gap-detail-panel td { padding: 3px 8px; border: 1px solid #eee; font-size: 10px; }
   .gap-detail-panel tr:nth-child(even) { background: #fafaf5; }
   .gap-detail-summary { margin-bottom: 6px; color: #555; }
+
+  /* ── Gap tooltip ────────────────────────────────── */
+  .gap-mark .gap-tip {
+    display: none; position: absolute; bottom: 100%; left: 50%;
+    transform: translateX(-50%); margin-bottom: 4px;
+    background: #333; color: #fff; padding: 4px 8px; border-radius: 3px;
+    font-size: 10px; white-space: nowrap; z-index: 10;
+    pointer-events: none; line-height: 1.5;
+  }
+  .gap-mark:hover .gap-tip { display: block; }
 </style>
 </head>
 <body>
@@ -167,16 +177,25 @@ function covColor(pct) {
   return pct >= 99 ? '#4a4' : pct >= 95 ? '#a80' : '#c03';
 }
 
-function mergeIntervals(intervals) {
+function mergeIntervals(intervals, globalSpan) {
   if (!intervals.length) return [];
   intervals.sort((a, b) => a[0] - b[0]);
-  const merged = [intervals[0].slice()];
+  // Merge gaps that overlap OR are visually close (within 0.3% of timeline)
+  const visualGap = globalSpan ? globalSpan * 0.003 : 0;
+  // Each entry: [start, end, gapCount, totalMinutes]
+  const mins0 = intervals[0].length >= 3 ? intervals[0][2] : Math.round((intervals[0][1] - intervals[0][0]) / 60000);
+  const merged = [[intervals[0][0], intervals[0][1], 1, mins0]];
   for (let i = 1; i < intervals.length; i++) {
     const last = merged[merged.length - 1];
-    if (intervals[i][0] <= last[1]) {
+    const minsI = intervals[i].length >= 3 ? intervals[i][2] : Math.round((intervals[i][1] - intervals[i][0]) / 60000);
+    // Visual end = actual end or start + minWidth equivalent, whichever is larger
+    const visualEnd = last[1] + visualGap;
+    if (intervals[i][0] <= visualEnd) {
       last[1] = Math.max(last[1], intervals[i][1]);
+      last[2] += 1;
+      last[3] += minsI;
     } else {
-      merged.push(intervals[i].slice());
+      merged.push([intervals[i][0], intervals[i][1], 1, minsI]);
     }
   }
   return merged;
@@ -200,7 +219,8 @@ function getExchSummary(exch) {
     if (firstMs > globalStart) listingEdges.push([globalStart, firstMs]);
     if (lastMs < globalEnd) listingEdges.push([lastMs, globalEnd]);
   });
-  return { totalCoins, withGaps, avgCov, mergedGaps: mergeIntervals(allIntervals), mergedEdges: mergeIntervals(listingEdges) };
+  const globalSpan = globalEnd - globalStart;
+  return { totalCoins, withGaps, avgCov, mergedGaps: mergeIntervals(allIntervals, globalSpan), mergedEdges: mergeIntervals(listingEdges) };
 }
 
 function buildDateTicks(timelineDiv) {
@@ -231,11 +251,15 @@ function renderExchBar(barWrap, mergedGaps, mergedEdges) {
     mark.style.width = Math.max(((e - s) / globalSpan * 100), 0.1) + '%';
     barWrap.appendChild(mark);
   });
-  mergedGaps.forEach(([s, e]) => {
+  mergedGaps.forEach(([s, e, gapCount, totalMin]) => {
     const mark = document.createElement('div');
     mark.className = 'gap-mark';
     mark.style.left = ((s - globalStart) / globalSpan * 100) + '%';
     mark.style.width = Math.max(((e - s) / globalSpan * 100), 0.15) + '%';
+    const tip = document.createElement('span');
+    tip.className = 'gap-tip';
+    tip.innerHTML = `Start: ${fmtDate(new Date(s).toISOString())}<br>End: ${fmtDate(new Date(e).toISOString())}<br>Gaps: ${gapCount}<br>Minutes: ${totalMin}`;
+    mark.appendChild(tip);
     barWrap.appendChild(mark);
   });
 }
@@ -377,13 +401,16 @@ function renderCoinDetail(container, exch) {
       mark.title = `After last tick: ${fmtDate(info.last_tick)}`;
       barWrap.appendChild(mark);
     }
-    info.gaps.forEach(g => {
-      const [startMs, endMs, missingMin] = g;
+    const coinMerged = mergeIntervals(info.gaps.map(g => [g[0], g[1], g[2]]), globalSpan);
+    coinMerged.forEach(([s, e, gapCount, totalMin]) => {
       const mark = document.createElement('div');
       mark.className = 'gap-mark';
-      mark.style.left = ((startMs - globalStart) / globalSpan * 100) + '%';
-      mark.style.width = Math.max(((endMs - startMs) / globalSpan * 100), 0.15) + '%';
-      mark.title = `${fmtDate(new Date(startMs).toISOString())} \u2192 ${fmtDate(new Date(endMs).toISOString())} (${fmtDuration(missingMin)})`;
+      mark.style.left = ((s - globalStart) / globalSpan * 100) + '%';
+      mark.style.width = Math.max(((e - s) / globalSpan * 100), 0.15) + '%';
+      const tip = document.createElement('span');
+      tip.className = 'gap-tip';
+      tip.innerHTML = `Start: ${fmtDate(new Date(s).toISOString())}<br>End: ${fmtDate(new Date(e).toISOString())}<br>Gaps: ${gapCount}<br>Minutes: ${totalMin}`;
+      mark.appendChild(tip);
       barWrap.appendChild(mark);
     });
 
