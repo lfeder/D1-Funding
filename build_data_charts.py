@@ -5,7 +5,7 @@ import pandas as pd
 
 BASE = os.path.dirname(__file__)
 PARQUET = os.path.join(BASE, "raw", "funding_rates_3m_v3.parquet")
-OUT_DIR = os.path.join(BASE, "data")
+OUT_DIR = os.path.join(BASE, "funding", "data")
 
 os.makedirs(OUT_DIR, exist_ok=True)
 

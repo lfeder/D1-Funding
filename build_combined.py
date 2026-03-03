@@ -6,7 +6,7 @@ import json
 import os
 
 BASE = os.path.dirname(__file__)
-GRID_JSON = os.path.join(BASE, "data", "grid.json")
+GRID_JSON = os.path.join(BASE, "funding", "data", "grid.json")
 
 with open(GRID_JSON, "r") as f:
     grid = json.load(f)
@@ -441,9 +441,9 @@ initChart();
 </html>
 """
 
-with open("index.html", "w", encoding="utf-8") as f:
+with open(os.path.join(BASE, "funding", "index.html"), "w", encoding="utf-8") as f:
     f.write(HTML_TOP)
     f.write(grid_data_js)
     f.write(HTML_BOTTOM)
 
-print("Done - wrote index.html")
+print("Done - wrote funding/index.html")

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>L2 Gap Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #f5f5f0; color: #222; font-family: monospace; font-size: 11px; padding: 16px; }
+  h2 { font-size: 14px; margin-bottom: 4px; }
+  p.sub { color: #666; font-size: 10px; margin-bottom: 12px; }
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .toolbar label { font-size: 11px; color: #555; }
+  .toolbar select {
+    background: #fff; border: 1px solid #bbb; border-radius: 4px;
+    padding: 4px 8px; font-family: monospace; font-size: 11px;
+  }
+  .toolbar .stat { font-size: 10px; color: #888; }
+  .row-container { overflow-y: auto; max-height: calc(100vh - 100px); }
+  .coin-row {
+    display: flex; align-items: center; padding: 4px 0; cursor: pointer;
+    border-bottom: 1px solid #e0e0d8;
+  }
+  .coin-row:hover { background: #eeeee8; }
+  .coin-row.even { background: #fafaf5; }
+  .coin-row.even:hover { background: #eeeee8; }
+  .coin-label {
+    width: 160px; min-width: 160px; padding: 0 8px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px;
+  }
+  .coin-label .name { font-weight: bold; }
+  .coin-label .cov { color: #888; font-size: 10px; }
+  .bar-wrap { flex: 1; height: 16px; position: relative; background: #d4e6d4; border-radius: 2px; overflow: hidden; }
+  .gap-mark {
+    position: absolute; top: 0; height: 100%; background: #c0392b; min-width: 1px;
+  }
+  .listing-mark {
+    position: absolute; top: 0; height: 100%; background: #bbb; min-width: 1px;
+  }
+  .detail-panel {
+    display: none; background: #fff; border: 1px solid #ddd; border-radius: 4px;
+    margin: 4px 0 8px 160px; padding: 8px 12px; font-size: 10px;
+  }
+  .detail-panel.open { display: block; }
+  .detail-panel table { border-collapse: collapse; width: 100%; }
+  .detail-panel th {
+    background: #e0e0d8; text-align: left; padding: 3px 8px;
+    border: 1px solid #ccc; font-size: 10px;
+  }
+  .detail-panel td {
+    padding: 3px 8px; border: 1px solid #eee; font-size: 10px;
+  }
+  .detail-panel tr:nth-child(even) { background: #fafaf5; }
+  .detail-summary { margin-bottom: 6px; color: #555; }
+  .legend { display: flex; gap: 16px; margin-bottom: 12px; font-size: 10px; color: #666; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<h2>L2 Orderbook Gap Viewer</h2>
+<p class="sub">Coverage gaps in 1-minute L2 orderbook data &nbsp;|&nbsp; click a row to see gap details</p>
+
+<div class="toolbar">
+  <label>Exchange:</label>
+  <select id="exch-select"></select>
+  <span class="stat" id="stat-text"></span>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#d4e6d4"></div> Data present</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#c0392b"></div> Gap (missing data)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#bbb"></div> Before first / after last tick</div>
+</div>
+
+<div class="row-container" id="rows"></div>
+
+<script>
+// DATA_PLACEHOLDER will be replaced by build script or loaded from gaps.json
+let GAP_DATA = null;
+
+async function loadData() {
+  if (typeof INLINE_DATA !== 'undefined') {
+    GAP_DATA = INLINE_DATA;
+  } else {
+    const resp = await fetch('gaps.json');
+    GAP_DATA = await resp.json();
+  }
+  init();
+}
+
+function init() {
+  const sel = document.getElementById('exch-select');
+  GAP_DATA.exchanges.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e; opt.textContent = e;
+    sel.appendChild(opt);
+  });
+  sel.onchange = () => render(sel.value);
+  render(GAP_DATA.exchanges[0]);
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+  const day = String(d.getUTCDate()).padStart(2,'0');
+  const hh = String(d.getUTCHours()).padStart(2,'0');
+  const mm = String(d.getUTCMinutes()).padStart(2,'0');
+  return `${mon} ${day} ${hh}:${mm}`;
+}
+
+function fmtDuration(minutes) {
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1440) return `${Math.floor(minutes/60)}h ${minutes%60}m`;
+  const d = Math.floor(minutes / 1440);
+  const h = Math.floor((minutes % 1440) / 60);
+  return `${d}d ${h}h`;
+}
+
+function render(exch) {
+  const container = document.getElementById('rows');
+  container.innerHTML = '';
+
+  const exchData = GAP_DATA.gaps[exch];
+  if (!exchData) return;
+
+  const globalStart = new Date(GAP_DATA.data_start).getTime();
+  const globalEnd = new Date(GAP_DATA.data_end).getTime();
+  const globalSpan = globalEnd - globalStart;
+
+  // Sort coins by most missing first
+  const coins = Object.keys(exchData).sort((a, b) =>
+    exchData[b].missing_minutes - exchData[a].missing_minutes
+  );
+
+  // Stats
+  const totalCoins = coins.length;
+  const withGaps = coins.filter(c => exchData[c].missing_minutes > 0).length;
+  const avgCov = coins.reduce((s, c) => s + exchData[c].coverage_pct, 0) / totalCoins;
+  document.getElementById('stat-text').textContent =
+    `${totalCoins} coins | ${withGaps} with gaps | avg coverage ${avgCov.toFixed(1)}%`;
+
+  coins.forEach((coin, idx) => {
+    const info = exchData[coin];
+    const firstMs = new Date(info.first_tick).getTime();
+    const lastMs = new Date(info.last_tick).getTime();
+
+    // Row wrapper
+    const wrapper = document.createElement('div');
+
+    // Coin row
+    const row = document.createElement('div');
+    row.className = 'coin-row' + (idx % 2 === 0 ? ' even' : '');
+
+    // Label
+    const label = document.createElement('div');
+    label.className = 'coin-label';
+    const covColor = info.coverage_pct >= 99 ? '#4a4' : info.coverage_pct >= 95 ? '#a80' : '#c03';
+    label.innerHTML = `<span class="name">${coin}</span><span class="cov" style="color:${covColor}">${info.coverage_pct}%</span>`;
+
+    // Bar
+    const barWrap = document.createElement('div');
+    barWrap.className = 'bar-wrap';
+
+    // Listing edge: before first tick
+    if (firstMs > globalStart) {
+      const mark = document.createElement('div');
+      mark.className = 'listing-mark';
+      mark.style.left = '0%';
+      mark.style.width = ((firstMs - globalStart) / globalSpan * 100) + '%';
+      mark.title = `Before first tick: ${fmtDate(info.first_tick)}`;
+      barWrap.appendChild(mark);
+    }
+
+    // Listing edge: after last tick
+    if (lastMs < globalEnd) {
+      const mark = document.createElement('div');
+      mark.className = 'listing-mark';
+      const leftPct = (lastMs - globalStart) / globalSpan * 100;
+      mark.style.left = leftPct + '%';
+      mark.style.width = (100 - leftPct) + '%';
+      mark.title = `After last tick: ${fmtDate(info.last_tick)}`;
+      barWrap.appendChild(mark);
+    }
+
+    // Gap marks
+    info.gaps.forEach(g => {
+      const [startMs, endMs, missingMin] = g;
+      const mark = document.createElement('div');
+      mark.className = 'gap-mark';
+      mark.style.left = ((startMs - globalStart) / globalSpan * 100) + '%';
+      mark.style.width = Math.max(((endMs - startMs) / globalSpan * 100), 0.15) + '%';
+      mark.title = `${fmtDate(new Date(startMs).toISOString())} → ${fmtDate(new Date(endMs).toISOString())} (${fmtDuration(missingMin)})`;
+      barWrap.appendChild(mark);
+    });
+
+    row.appendChild(label);
+    row.appendChild(barWrap);
+    wrapper.appendChild(row);
+
+    // Detail panel
+    const detail = document.createElement('div');
+    detail.className = 'detail-panel';
+
+    row.onclick = () => {
+      const isOpen = detail.classList.contains('open');
+      // Close all
+      document.querySelectorAll('.detail-panel.open').forEach(p => p.classList.remove('open'));
+      if (!isOpen) {
+        // Build detail content on first open
+        if (!detail.dataset.built) {
+          let html = `<div class="detail-summary">
+            <b>${coin}</b> on ${exch} &mdash;
+            first: ${fmtDate(info.first_tick)}, last: ${fmtDate(info.last_tick)},
+            ${info.total_minutes.toLocaleString()} expected min,
+            ${info.missing_minutes.toLocaleString()} missing,
+            ${info.gaps.length} gap${info.gaps.length !== 1 ? 's' : ''}
+          </div>`;
+
+          if (info.gaps.length > 0) {
+            html += '<table><tr><th>#</th><th>Gap Start (UTC)</th><th>Gap End (UTC)</th><th>Missing</th></tr>';
+            info.gaps.forEach((g, gi) => {
+              const [startMs, endMs, missingMin] = g;
+              html += `<tr>
+                <td>${gi + 1}</td>
+                <td>${fmtDate(new Date(startMs).toISOString())}</td>
+                <td>${fmtDate(new Date(endMs).toISOString())}</td>
+                <td>${fmtDuration(missingMin)}</td>
+              </tr>`;
+            });
+            html += '</table>';
+          } else {
+            html += '<div style="color:#4a4">No gaps &mdash; full coverage between first and last tick.</div>';
+          }
+          detail.innerHTML = html;
+          detail.dataset.built = '1';
+        }
+        detail.classList.add('open');
+      }
+    };
+
+    wrapper.appendChild(detail);
+    container.appendChild(wrapper);
+  });
+}
+
+loadData();
+</script>
+</body>
+</html>
