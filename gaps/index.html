@@ -9,14 +9,43 @@
   body { background: #f5f5f0; color: #222; font-family: monospace; font-size: 11px; padding: 16px; }
   h2 { font-size: 14px; margin-bottom: 4px; }
   p.sub { color: #666; font-size: 10px; margin-bottom: 12px; }
-  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-  .toolbar label { font-size: 11px; color: #555; }
-  .toolbar select {
-    background: #fff; border: 1px solid #bbb; border-radius: 4px;
-    padding: 4px 8px; font-family: monospace; font-size: 11px;
+
+  .legend { display: flex; gap: 16px; margin-bottom: 14px; font-size: 10px; color: #666; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+  /* ── Exchange summary rows ─────────────────────────── */
+  .exch-row {
+    display: flex; align-items: center; padding: 8px 0; cursor: pointer;
+    border-bottom: 1px solid #d0d0c8;
   }
-  .toolbar .stat { font-size: 10px; color: #888; }
-  .row-container { overflow-y: auto; max-height: calc(100vh - 140px); }
+  .exch-row:hover { background: #eeeee8; }
+  .exch-row.even { background: #fafaf5; }
+  .exch-row.even:hover { background: #eeeee8; }
+  .exch-row.expanded { background: #e4e8ec; border-bottom: none; }
+  .exch-label {
+    width: 260px; min-width: 260px; padding: 0 8px;
+    display: flex; align-items: center; gap: 0; font-size: 11px;
+  }
+  .exch-label .ename { font-weight: bold; width: 100px; min-width: 100px; font-size: 12px; }
+  .exch-label .estat { width: 160px; min-width: 160px; font-size: 10px; color: #666; }
+  .exch-bar-wrap {
+    flex: 1; height: 20px; position: relative; background: #d4e6d4;
+    border-radius: 2px; overflow: hidden;
+  }
+  .exch-bar-wrap .gap-mark {
+    position: absolute; top: 0; height: 100%; background: rgba(192,57,43,0.6); min-width: 1px;
+  }
+  .exch-bar-wrap .listing-mark {
+    position: absolute; top: 0; height: 100%; background: #bbb; min-width: 1px;
+  }
+  .exch-arrow { width: 20px; text-align: center; font-size: 12px; color: #888; }
+
+  /* ── Expanded coin detail panel ────────────────────── */
+  .exch-detail { display: none; border-bottom: 2px solid #bbb; background: #fff; }
+  .exch-detail.open { display: block; }
+  .exch-detail-inner { padding: 8px 0 8px 0; max-height: 60vh; overflow-y: auto; }
+
   .col-header {
     display: flex; align-items: center; padding: 4px 0;
     border-bottom: 2px solid #bbb; background: #e0e0d8; position: sticky; top: 0; z-index: 1;
@@ -29,6 +58,7 @@
   .col-header .col.active { color: #3a6ea8; }
   .col-header .col-name { width: 100px; min-width: 100px; }
   .col-header .col-cov { width: 60px; min-width: 60px; text-align: right; }
+
   .date-axis {
     display: flex; align-items: flex-end; padding: 0; margin-bottom: 2px;
     border-bottom: 1px solid #ccc;
@@ -40,6 +70,7 @@
     border-left: 1px solid #ccc; padding-left: 2px; height: 100%;
     line-height: 16px; white-space: nowrap;
   }
+
   .coin-row {
     display: flex; align-items: center; padding: 4px 0; cursor: pointer;
     border-bottom: 1px solid #e0e0d8;
@@ -49,48 +80,33 @@
   .coin-row.even:hover { background: #eeeee8; }
   .coin-label {
     width: 160px; min-width: 160px; padding: 0 8px;
-    display: flex; align-items: center; gap: 0;
-    font-size: 11px;
+    display: flex; align-items: center; gap: 0; font-size: 11px;
   }
   .coin-label .name { font-weight: bold; width: 100px; min-width: 100px; }
   .coin-label .cov { width: 60px; min-width: 60px; text-align: right; font-size: 10px; }
   .bar-wrap { flex: 1; height: 16px; position: relative; background: #d4e6d4; border-radius: 2px; overflow: hidden; }
-  .gap-mark {
-    position: absolute; top: 0; height: 100%; background: #c0392b; min-width: 1px;
-  }
-  .listing-mark {
-    position: absolute; top: 0; height: 100%; background: #bbb; min-width: 1px;
-  }
-  .detail-panel {
-    display: none; background: #fff; border: 1px solid #ddd; border-radius: 4px;
+  .gap-mark { position: absolute; top: 0; height: 100%; background: #c0392b; min-width: 1px; }
+  .listing-mark { position: absolute; top: 0; height: 100%; background: #bbb; min-width: 1px; }
+
+  .gap-detail-panel {
+    display: none; background: #f9f9f4; border: 1px solid #ddd; border-radius: 4px;
     margin: 4px 0 8px 160px; padding: 8px 12px; font-size: 10px;
   }
-  .detail-panel.open { display: block; }
-  .detail-panel table { border-collapse: collapse; width: 100%; }
-  .detail-panel th {
+  .gap-detail-panel.open { display: block; }
+  .gap-detail-panel table { border-collapse: collapse; width: 100%; }
+  .gap-detail-panel th {
     background: #e0e0d8; text-align: left; padding: 3px 8px;
     border: 1px solid #ccc; font-size: 10px;
   }
-  .detail-panel td {
-    padding: 3px 8px; border: 1px solid #eee; font-size: 10px;
-  }
-  .detail-panel tr:nth-child(even) { background: #fafaf5; }
-  .detail-summary { margin-bottom: 6px; color: #555; }
-  .legend { display: flex; gap: 16px; margin-bottom: 12px; font-size: 10px; color: #666; }
-  .legend-item { display: flex; align-items: center; gap: 4px; }
-  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+  .gap-detail-panel td { padding: 3px 8px; border: 1px solid #eee; font-size: 10px; }
+  .gap-detail-panel tr:nth-child(even) { background: #fafaf5; }
+  .gap-detail-summary { margin-bottom: 6px; color: #555; }
 </style>
 </head>
 <body>
 
 <h2>L2 Orderbook Gap Viewer</h2>
-<p class="sub">Coverage gaps in 1-minute L2 orderbook data &nbsp;|&nbsp; click a row to see gap details</p>
-
-<div class="toolbar">
-  <label>Exchange:</label>
-  <select id="exch-select"></select>
-  <span class="stat" id="stat-text"></span>
-</div>
+<p class="sub">Coverage gaps in 1-minute L2 orderbook data &nbsp;|&nbsp; click an exchange to expand per-coin details</p>
 
 <div class="legend">
   <div class="legend-item"><div class="legend-swatch" style="background:#d4e6d4"></div> Data present</div>
@@ -98,13 +114,12 @@
   <div class="legend-item"><div class="legend-swatch" style="background:#bbb"></div> Before first / after last tick</div>
 </div>
 
-<div class="row-container" id="rows"></div>
+<div id="main"></div>
 
 <script>
-// DATA_PLACEHOLDER will be replaced by build script or loaded from gaps.json
 let GAP_DATA = null;
-let sortCol = 'coverage'; // 'name' or 'coverage'
-let sortAsc = true;        // true = ascending
+// Per-exchange sort state
+const exchSort = {};
 
 async function loadData() {
   if (typeof INLINE_DATA !== 'undefined') {
@@ -113,18 +128,7 @@ async function loadData() {
     const resp = await fetch('gaps.json');
     GAP_DATA = await resp.json();
   }
-  init();
-}
-
-function init() {
-  const sel = document.getElementById('exch-select');
-  GAP_DATA.exchanges.forEach(e => {
-    const opt = document.createElement('option');
-    opt.value = e; opt.textContent = e;
-    sel.appendChild(opt);
-  });
-  sel.onchange = () => render(sel.value);
-  render(GAP_DATA.exchanges[0]);
+  render();
 }
 
 function fmtDate(iso) {
@@ -144,99 +148,222 @@ function fmtDuration(minutes) {
   return `${d}d ${h}h`;
 }
 
-function toggleSort(col) {
-  if (sortCol === col) {
-    sortAsc = !sortAsc;
-  } else {
-    sortCol = col;
-    sortAsc = col === 'name'; // name defaults asc, coverage defaults asc (lowest first)
-  }
-  render(document.getElementById('exch-select').value);
+function covColor(pct) {
+  return pct >= 99 ? '#4a4' : pct >= 95 ? '#a80' : '#c03';
 }
 
-function render(exch) {
-  const container = document.getElementById('rows');
-  container.innerHTML = '';
+// Compute exchange summary: merge all coin gap intervals into a reduced set
+function mergeIntervals(intervals) {
+  if (!intervals.length) return [];
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged = [intervals[0].slice()];
+  for (let i = 1; i < intervals.length; i++) {
+    const last = merged[merged.length - 1];
+    if (intervals[i][0] <= last[1]) {
+      last[1] = Math.max(last[1], intervals[i][1]);
+    } else {
+      merged.push(intervals[i].slice());
+    }
+  }
+  return merged;
+}
 
+function getExchSummary(exch) {
   const exchData = GAP_DATA.gaps[exch];
-  if (!exchData) return;
+  const coins = Object.keys(exchData);
+  const totalCoins = coins.length;
+  const withGaps = coins.filter(c => exchData[c].missing_minutes > 0).length;
+  const avgCov = coins.reduce((s, c) => s + exchData[c].coverage_pct, 0) / totalCoins;
 
+  // Collect all gap intervals + listing edges for aggregate bar
+  const allIntervals = [];
+  const listingEdges = [];
+  const globalStart = new Date(GAP_DATA.data_start).getTime();
+  const globalEnd = new Date(GAP_DATA.data_end).getTime();
+
+  coins.forEach(coin => {
+    const info = exchData[coin];
+    const firstMs = new Date(info.first_tick).getTime();
+    const lastMs = new Date(info.last_tick).getTime();
+    // Gaps
+    info.gaps.forEach(g => allIntervals.push([g[0], g[1]]));
+    // Listing edges as separate category
+    if (firstMs > globalStart) listingEdges.push([globalStart, firstMs]);
+    if (lastMs < globalEnd) listingEdges.push([lastMs, globalEnd]);
+  });
+
+  return {
+    totalCoins, withGaps, avgCov,
+    mergedGaps: mergeIntervals(allIntervals),
+    mergedEdges: mergeIntervals(listingEdges),
+  };
+}
+
+function buildDateAxis() {
   const globalStart = new Date(GAP_DATA.data_start).getTime();
   const globalEnd = new Date(GAP_DATA.data_end).getTime();
   const globalSpan = globalEnd - globalStart;
+  const DAY_MS = 86400000;
 
-  // Sort coins
-  const coins = Object.keys(exchData).sort((a, b) => {
-    let cmp;
-    if (sortCol === 'name') {
-      cmp = a.localeCompare(b);
-    } else {
-      cmp = exchData[a].coverage_pct - exchData[b].coverage_pct;
-    }
-    return sortAsc ? cmp : -cmp;
-  });
-
-  // Column header
-  const arrow = (col) => sortCol === col ? (sortAsc ? ' \u25B2' : ' \u25BC') : '';
-  const hdr = document.createElement('div');
-  hdr.className = 'col-header';
-  hdr.innerHTML = `<div class="col col-name ${sortCol==='name'?'active':''}" onclick="toggleSort('name')">Coin${arrow('name')}</div>`
-    + `<div class="col col-cov ${sortCol==='coverage'?'active':''}" onclick="toggleSort('coverage')">Cov %${arrow('coverage')}</div>`
-    + `<div style="flex:1;font-size:10px;padding:2px 8px;color:#666">Timeline</div>`;
-  container.appendChild(hdr);
-
-  // Date axis with ticks every 3 days
   const dateAxis = document.createElement('div');
   dateAxis.className = 'date-axis';
   dateAxis.innerHTML = '<div class="date-axis-spacer"></div>';
   const axisBar = document.createElement('div');
   axisBar.className = 'date-axis-bar';
-  const tickStart = new Date(GAP_DATA.data_start);
-  const DAY_MS = 86400000;
-  for (let t = tickStart.getTime(); t <= globalEnd; t += 3 * DAY_MS) {
+  for (let t = globalStart; t <= globalEnd; t += 3 * DAY_MS) {
     const d = new Date(t);
     const pct = (t - globalStart) / globalSpan * 100;
     const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
-    const day = d.getUTCDate();
     const tick = document.createElement('div');
     tick.className = 'date-tick';
     tick.style.left = pct + '%';
-    tick.textContent = `${mon} ${day}`;
+    tick.textContent = `${mon} ${d.getUTCDate()}`;
     axisBar.appendChild(tick);
   }
   dateAxis.appendChild(axisBar);
-  container.appendChild(dateAxis);
+  return dateAxis;
+}
 
-  // Stats
-  const totalCoins = coins.length;
-  const withGaps = coins.filter(c => exchData[c].missing_minutes > 0).length;
-  const avgCov = coins.reduce((s, c) => s + exchData[c].coverage_pct, 0) / totalCoins;
-  document.getElementById('stat-text').textContent =
-    `${totalCoins} coins | ${withGaps} with gaps | avg coverage ${avgCov.toFixed(1)}%`;
+function renderExchBar(barWrap, mergedGaps, mergedEdges) {
+  const globalStart = new Date(GAP_DATA.data_start).getTime();
+  const globalEnd = new Date(GAP_DATA.data_end).getTime();
+  const globalSpan = globalEnd - globalStart;
 
+  mergedEdges.forEach(([s, e]) => {
+    const mark = document.createElement('div');
+    mark.className = 'listing-mark';
+    mark.style.left = ((s - globalStart) / globalSpan * 100) + '%';
+    mark.style.width = Math.max(((e - s) / globalSpan * 100), 0.1) + '%';
+    barWrap.appendChild(mark);
+  });
+  mergedGaps.forEach(([s, e]) => {
+    const mark = document.createElement('div');
+    mark.className = 'gap-mark';
+    mark.style.left = ((s - globalStart) / globalSpan * 100) + '%';
+    mark.style.width = Math.max(((e - s) / globalSpan * 100), 0.15) + '%';
+    barWrap.appendChild(mark);
+  });
+}
+
+function render() {
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+
+  const globalStart = new Date(GAP_DATA.data_start).getTime();
+  const globalEnd = new Date(GAP_DATA.data_end).getTime();
+  const globalSpan = globalEnd - globalStart;
+
+  GAP_DATA.exchanges.forEach((exch, ei) => {
+    const summary = getExchSummary(exch);
+
+    // Exchange summary row
+    const row = document.createElement('div');
+    row.className = 'exch-row' + (ei % 2 === 0 ? ' even' : '');
+
+    const arrow = document.createElement('div');
+    arrow.className = 'exch-arrow';
+    arrow.textContent = '\u25B6';
+
+    const label = document.createElement('div');
+    label.className = 'exch-label';
+    label.innerHTML = `<span class="ename">${exch}</span>`
+      + `<span class="estat">${summary.totalCoins} coins`
+      + ` &nbsp; <span style="color:${covColor(summary.avgCov)}">${summary.avgCov.toFixed(1)}% avg</span>`
+      + ` &nbsp; ${summary.withGaps} w/ gaps</span>`;
+
+    const barWrap = document.createElement('div');
+    barWrap.className = 'exch-bar-wrap';
+    renderExchBar(barWrap, summary.mergedGaps, summary.mergedEdges);
+
+    row.appendChild(arrow);
+    row.appendChild(label);
+    row.appendChild(barWrap);
+
+    // Detail panel (lazy-built)
+    const detail = document.createElement('div');
+    detail.className = 'exch-detail';
+
+    row.onclick = () => {
+      const isOpen = detail.classList.contains('open');
+      // Close all
+      document.querySelectorAll('.exch-detail.open').forEach(d => d.classList.remove('open'));
+      document.querySelectorAll('.exch-row.expanded').forEach(r => {
+        r.classList.remove('expanded');
+        r.querySelector('.exch-arrow').textContent = '\u25B6';
+      });
+      if (!isOpen) {
+        detail.classList.add('open');
+        row.classList.add('expanded');
+        arrow.textContent = '\u25BC';
+        renderCoinDetail(detail, exch);
+      }
+    };
+
+    main.appendChild(row);
+    main.appendChild(detail);
+  });
+}
+
+function renderCoinDetail(container, exch) {
+  container.innerHTML = '';
+  const inner = document.createElement('div');
+  inner.className = 'exch-detail-inner';
+
+  const exchData = GAP_DATA.gaps[exch];
+  const globalStart = new Date(GAP_DATA.data_start).getTime();
+  const globalEnd = new Date(GAP_DATA.data_end).getTime();
+  const globalSpan = globalEnd - globalStart;
+
+  // Sort state per exchange
+  if (!exchSort[exch]) exchSort[exch] = { col: 'coverage', asc: true };
+  const st = exchSort[exch];
+
+  const coins = Object.keys(exchData).sort((a, b) => {
+    let cmp;
+    if (st.col === 'name') cmp = a.localeCompare(b);
+    else cmp = exchData[a].coverage_pct - exchData[b].coverage_pct;
+    return st.asc ? cmp : -cmp;
+  });
+
+  // Column header
+  const arrowStr = (col) => st.col === col ? (st.asc ? ' \u25B2' : ' \u25BC') : '';
+  const hdr = document.createElement('div');
+  hdr.className = 'col-header';
+  hdr.innerHTML = `<div class="col col-name ${st.col==='name'?'active':''}" data-col="name">Coin${arrowStr('name')}</div>`
+    + `<div class="col col-cov ${st.col==='coverage'?'active':''}" data-col="coverage">Cov %${arrowStr('coverage')}</div>`
+    + `<div style="flex:1;font-size:10px;padding:2px 8px;color:#666">Timeline</div>`;
+  hdr.querySelectorAll('.col').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const col = el.dataset.col;
+      if (st.col === col) st.asc = !st.asc;
+      else { st.col = col; st.asc = col === 'name'; }
+      renderCoinDetail(container, exch);
+    };
+  });
+  inner.appendChild(hdr);
+
+  // Date axis
+  inner.appendChild(buildDateAxis());
+
+  // Coin rows
   coins.forEach((coin, idx) => {
     const info = exchData[coin];
     const firstMs = new Date(info.first_tick).getTime();
     const lastMs = new Date(info.last_tick).getTime();
 
-    // Row wrapper
     const wrapper = document.createElement('div');
 
-    // Coin row
     const row = document.createElement('div');
     row.className = 'coin-row' + (idx % 2 === 0 ? ' even' : '');
 
-    // Label
     const label = document.createElement('div');
     label.className = 'coin-label';
-    const covColor = info.coverage_pct >= 99 ? '#4a4' : info.coverage_pct >= 95 ? '#a80' : '#c03';
-    label.innerHTML = `<span class="name">${coin}</span><span class="cov" style="color:${covColor}">${info.coverage_pct}%</span>`;
+    label.innerHTML = `<span class="name">${coin}</span><span class="cov" style="color:${covColor(info.coverage_pct)}">${info.coverage_pct}%</span>`;
 
-    // Bar
     const barWrap = document.createElement('div');
     barWrap.className = 'bar-wrap';
 
-    // Listing edge: before first tick
     if (firstMs > globalStart) {
       const mark = document.createElement('div');
       mark.className = 'listing-mark';
@@ -245,8 +372,6 @@ function render(exch) {
       mark.title = `Before first tick: ${fmtDate(info.first_tick)}`;
       barWrap.appendChild(mark);
     }
-
-    // Listing edge: after last tick
     if (lastMs < globalEnd) {
       const mark = document.createElement('div');
       mark.className = 'listing-mark';
@@ -256,15 +381,13 @@ function render(exch) {
       mark.title = `After last tick: ${fmtDate(info.last_tick)}`;
       barWrap.appendChild(mark);
     }
-
-    // Gap marks
     info.gaps.forEach(g => {
       const [startMs, endMs, missingMin] = g;
       const mark = document.createElement('div');
       mark.className = 'gap-mark';
       mark.style.left = ((startMs - globalStart) / globalSpan * 100) + '%';
       mark.style.width = Math.max(((endMs - startMs) / globalSpan * 100), 0.15) + '%';
-      mark.title = `${fmtDate(new Date(startMs).toISOString())} → ${fmtDate(new Date(endMs).toISOString())} (${fmtDuration(missingMin)})`;
+      mark.title = `${fmtDate(new Date(startMs).toISOString())} \u2192 ${fmtDate(new Date(endMs).toISOString())} (${fmtDuration(missingMin)})`;
       barWrap.appendChild(mark);
     });
 
@@ -272,39 +395,31 @@ function render(exch) {
     row.appendChild(barWrap);
     wrapper.appendChild(row);
 
-    // Detail panel
+    // Gap detail panel per coin
     const detail = document.createElement('div');
-    detail.className = 'detail-panel';
-
-    row.onclick = () => {
+    detail.className = 'gap-detail-panel';
+    row.onclick = (e) => {
+      e.stopPropagation();
       const isOpen = detail.classList.contains('open');
-      // Close all
-      document.querySelectorAll('.detail-panel.open').forEach(p => p.classList.remove('open'));
+      container.querySelectorAll('.gap-detail-panel.open').forEach(p => p.classList.remove('open'));
       if (!isOpen) {
-        // Build detail content on first open
         if (!detail.dataset.built) {
-          let html = `<div class="detail-summary">
+          let html = `<div class="gap-detail-summary">
             <b>${coin}</b> on ${exch} &mdash;
             first: ${fmtDate(info.first_tick)}, last: ${fmtDate(info.last_tick)},
-            ${info.total_minutes.toLocaleString()} expected min,
+            ${info.total_minutes.toLocaleString()} total min,
             ${info.missing_minutes.toLocaleString()} missing,
             ${info.gaps.length} gap${info.gaps.length !== 1 ? 's' : ''}
           </div>`;
-
           if (info.gaps.length > 0) {
             html += '<table><tr><th>#</th><th>Gap Start (UTC)</th><th>Gap End (UTC)</th><th>Missing</th></tr>';
             info.gaps.forEach((g, gi) => {
               const [startMs, endMs, missingMin] = g;
-              html += `<tr>
-                <td>${gi + 1}</td>
-                <td>${fmtDate(new Date(startMs).toISOString())}</td>
-                <td>${fmtDate(new Date(endMs).toISOString())}</td>
-                <td>${fmtDuration(missingMin)}</td>
-              </tr>`;
+              html += `<tr><td>${gi+1}</td><td>${fmtDate(new Date(startMs).toISOString())}</td><td>${fmtDate(new Date(endMs).toISOString())}</td><td>${fmtDuration(missingMin)}</td></tr>`;
             });
             html += '</table>';
           } else {
-            html += '<div style="color:#4a4">No gaps &mdash; full coverage between first and last tick.</div>';
+            html += '<div style="color:#4a4">No gaps &mdash; full coverage.</div>';
           }
           detail.innerHTML = html;
           detail.dataset.built = '1';
@@ -314,8 +429,10 @@ function render(exch) {
     };
 
     wrapper.appendChild(detail);
-    container.appendChild(wrapper);
+    inner.appendChild(wrapper);
   });
+
+  container.appendChild(inner);
 }
 
 loadData();
