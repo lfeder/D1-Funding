@@ -16,7 +16,30 @@
     padding: 4px 8px; font-family: monospace; font-size: 11px;
   }
   .toolbar .stat { font-size: 10px; color: #888; }
-  .row-container { overflow-y: auto; max-height: calc(100vh - 100px); }
+  .row-container { overflow-y: auto; max-height: calc(100vh - 140px); }
+  .col-header {
+    display: flex; align-items: center; padding: 4px 0;
+    border-bottom: 2px solid #bbb; background: #e0e0d8; position: sticky; top: 0; z-index: 1;
+  }
+  .col-header .col {
+    padding: 2px 8px; cursor: pointer; font-weight: bold; font-size: 10px;
+    user-select: none; color: #444;
+  }
+  .col-header .col:hover { color: #000; }
+  .col-header .col.active { color: #3a6ea8; }
+  .col-header .col-name { width: 100px; min-width: 100px; }
+  .col-header .col-cov { width: 60px; min-width: 60px; text-align: right; }
+  .date-axis {
+    display: flex; align-items: flex-end; padding: 0; margin-bottom: 2px;
+    border-bottom: 1px solid #ccc;
+  }
+  .date-axis-spacer { width: 160px; min-width: 160px; }
+  .date-axis-bar { flex: 1; position: relative; height: 16px; }
+  .date-tick {
+    position: absolute; top: 0; font-size: 9px; color: #888;
+    border-left: 1px solid #ccc; padding-left: 2px; height: 100%;
+    line-height: 16px; white-space: nowrap;
+  }
   .coin-row {
     display: flex; align-items: center; padding: 4px 0; cursor: pointer;
     border-bottom: 1px solid #e0e0d8;
@@ -26,11 +49,11 @@
   .coin-row.even:hover { background: #eeeee8; }
   .coin-label {
     width: 160px; min-width: 160px; padding: 0 8px;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; align-items: center; gap: 0;
     font-size: 11px;
   }
-  .coin-label .name { font-weight: bold; }
-  .coin-label .cov { color: #888; font-size: 10px; }
+  .coin-label .name { font-weight: bold; width: 100px; min-width: 100px; }
+  .coin-label .cov { width: 60px; min-width: 60px; text-align: right; font-size: 10px; }
   .bar-wrap { flex: 1; height: 16px; position: relative; background: #d4e6d4; border-radius: 2px; overflow: hidden; }
   .gap-mark {
     position: absolute; top: 0; height: 100%; background: #c0392b; min-width: 1px;
@@ -80,6 +103,8 @@
 <script>
 // DATA_PLACEHOLDER will be replaced by build script or loaded from gaps.json
 let GAP_DATA = null;
+let sortCol = 'coverage'; // 'name' or 'coverage'
+let sortAsc = true;        // true = ascending
 
 async function loadData() {
   if (typeof INLINE_DATA !== 'undefined') {
@@ -119,6 +144,16 @@ function fmtDuration(minutes) {
   return `${d}d ${h}h`;
 }
 
+function toggleSort(col) {
+  if (sortCol === col) {
+    sortAsc = !sortAsc;
+  } else {
+    sortCol = col;
+    sortAsc = col === 'name'; // name defaults asc, coverage defaults asc (lowest first)
+  }
+  render(document.getElementById('exch-select').value);
+}
+
 function render(exch) {
   const container = document.getElementById('rows');
   container.innerHTML = '';
@@ -130,10 +165,47 @@ function render(exch) {
   const globalEnd = new Date(GAP_DATA.data_end).getTime();
   const globalSpan = globalEnd - globalStart;
 
-  // Sort coins by most missing first
-  const coins = Object.keys(exchData).sort((a, b) =>
-    exchData[b].missing_minutes - exchData[a].missing_minutes
-  );
+  // Sort coins
+  const coins = Object.keys(exchData).sort((a, b) => {
+    let cmp;
+    if (sortCol === 'name') {
+      cmp = a.localeCompare(b);
+    } else {
+      cmp = exchData[a].coverage_pct - exchData[b].coverage_pct;
+    }
+    return sortAsc ? cmp : -cmp;
+  });
+
+  // Column header
+  const arrow = (col) => sortCol === col ? (sortAsc ? ' \u25B2' : ' \u25BC') : '';
+  const hdr = document.createElement('div');
+  hdr.className = 'col-header';
+  hdr.innerHTML = `<div class="col col-name ${sortCol==='name'?'active':''}" onclick="toggleSort('name')">Coin${arrow('name')}</div>`
+    + `<div class="col col-cov ${sortCol==='coverage'?'active':''}" onclick="toggleSort('coverage')">Cov %${arrow('coverage')}</div>`
+    + `<div style="flex:1;font-size:10px;padding:2px 8px;color:#666">Timeline</div>`;
+  container.appendChild(hdr);
+
+  // Date axis with ticks every 3 days
+  const dateAxis = document.createElement('div');
+  dateAxis.className = 'date-axis';
+  dateAxis.innerHTML = '<div class="date-axis-spacer"></div>';
+  const axisBar = document.createElement('div');
+  axisBar.className = 'date-axis-bar';
+  const tickStart = new Date(GAP_DATA.data_start);
+  const DAY_MS = 86400000;
+  for (let t = tickStart.getTime(); t <= globalEnd; t += 3 * DAY_MS) {
+    const d = new Date(t);
+    const pct = (t - globalStart) / globalSpan * 100;
+    const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+    const day = d.getUTCDate();
+    const tick = document.createElement('div');
+    tick.className = 'date-tick';
+    tick.style.left = pct + '%';
+    tick.textContent = `${mon} ${day}`;
+    axisBar.appendChild(tick);
+  }
+  dateAxis.appendChild(axisBar);
+  container.appendChild(dateAxis);
 
   // Stats
   const totalCoins = coins.length;

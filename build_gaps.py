@@ -61,11 +61,10 @@ for i, ((exch, coin), grp) in enumerate(groups):
     first_tick = minutes.iloc[0]
     last_tick = minutes.iloc[-1]
 
-    # Expected minutes for this coin on this exchange (between first and last tick)
-    expected_minutes = int((last_tick - first_tick).total_seconds() / 60) + 1
+    # Coverage % uses global data range as denominator
     actual_minutes = len(minutes)
-    missing_minutes = expected_minutes - actual_minutes
-    coverage_pct = round(100 * actual_minutes / expected_minutes, 2) if expected_minutes > 0 else 100.0
+    missing_minutes = total_minutes - actual_minutes
+    coverage_pct = round(100 * actual_minutes / total_minutes, 2)
 
     # Find gaps: consecutive minute differences > 1 min
     minute_vals = minutes.values
@@ -88,7 +87,7 @@ for i, ((exch, coin), grp) in enumerate(groups):
         "coverage_pct": coverage_pct,
         "first_tick": first_tick.isoformat() + "Z",
         "last_tick": last_tick.isoformat() + "Z",
-        "total_minutes": expected_minutes,
+        "total_minutes": total_minutes,
         "missing_minutes": missing_minutes,
         "gaps": gap_list,
     }
