@@ -24,12 +24,24 @@
   .exch-row.even { background: #fafaf5; }
   .exch-row.even:hover { background: #eeeee8; }
   .exch-row.selected { background: #dde4ec; font-weight: bold; }
+  .exch-header {
+    display: flex; align-items: center; padding: 3px 0;
+    border-bottom: 2px solid #bbb; background: #e0e0d8;
+    font-size: 10px; font-weight: bold; color: #444;
+  }
+  .exch-header div { padding: 0 6px; }
+  .exch-col-name { width: 100px; min-width: 100px; }
+  .exch-col-coins { width: 50px; min-width: 50px; text-align: right; }
+  .exch-col-gaps { width: 50px; min-width: 50px; text-align: right; }
+  .exch-col-cov { width: 60px; min-width: 60px; text-align: right; }
   .exch-label {
-    width: 260px; min-width: 260px; padding: 0 6px;
     display: flex; align-items: center; gap: 0; font-size: 11px;
+    width: 260px; min-width: 260px; padding: 0 6px;
   }
   .exch-label .ename { width: 100px; min-width: 100px; font-size: 11px; }
-  .exch-label .estat { width: 160px; min-width: 160px; font-size: 10px; color: #666; }
+  .exch-label .ecoins { width: 50px; min-width: 50px; text-align: right; font-size: 10px; color: #666; }
+  .exch-label .egaps { width: 50px; min-width: 50px; text-align: right; font-size: 10px; color: #666; }
+  .exch-label .ecov { width: 60px; min-width: 60px; text-align: right; font-size: 10px; }
   .exch-bar-wrap {
     flex: 1; height: 14px; position: relative; background: #d4e6d4;
     border-radius: 2px; overflow: hidden;
@@ -255,6 +267,16 @@ function render() {
     return avgA - avgB;
   });
 
+  // Exchange header row
+  const hdr = document.createElement('div');
+  hdr.className = 'exch-header';
+  hdr.innerHTML = '<div class="exch-col-name">Exchange</div>'
+    + '<div class="exch-col-coins">Coins</div>'
+    + '<div class="exch-col-gaps">Gaps</div>'
+    + '<div class="exch-col-cov">Cov %</div>'
+    + '<div style="flex:1;padding:0 6px">Timeline</div>';
+  container.appendChild(hdr);
+
   exchOrder.forEach((exch, ei) => {
     const summary = getExchSummary(exch);
     const row = document.createElement('div');
@@ -264,9 +286,9 @@ function render() {
     const label = document.createElement('div');
     label.className = 'exch-label';
     label.innerHTML = `<span class="ename">${exch}</span>`
-      + `<span class="estat">${summary.totalCoins} coins`
-      + ` &nbsp;<span style="color:${covColor(summary.avgCov)}">${summary.avgCov.toFixed(1)}%</span>`
-      + ` &nbsp;${summary.withGaps} w/ gaps</span>`;
+      + `<span class="ecoins">${summary.totalCoins}</span>`
+      + `<span class="egaps">${summary.withGaps}</span>`
+      + `<span class="ecov" style="color:${covColor(summary.avgCov)}">${summary.avgCov.toFixed(1)}%</span>`;
 
     const barWrap = document.createElement('div');
     barWrap.className = 'exch-bar-wrap';
