@@ -51,28 +51,22 @@
   .coin-detail-inner { max-height: calc(100vh - 260px); overflow-y: auto; }
 
   .col-header {
-    display: flex; align-items: center; padding: 3px 0;
+    display: flex; align-items: stretch; padding: 0;
     border-bottom: 2px solid #bbb; background: #e8e8e2; position: sticky; top: 0; z-index: 1;
   }
   .col-header .col {
-    padding: 2px 8px; cursor: pointer; font-weight: bold; font-size: 10px;
-    user-select: none; color: #444;
+    padding: 4px 8px; cursor: pointer; font-weight: bold; font-size: 10px;
+    user-select: none; color: #444; display: flex; align-items: flex-end;
   }
   .col-header .col:hover { color: #000; }
   .col-header .col.active { color: #3a6ea8; }
   .col-header .col-name { width: 100px; min-width: 100px; }
-  .col-header .col-cov { width: 60px; min-width: 60px; text-align: right; }
-
-  .date-axis {
-    display: flex; align-items: flex-end; padding: 0; margin-bottom: 2px;
-    border-bottom: 1px solid #ccc;
-  }
-  .date-axis-spacer { width: 160px; min-width: 160px; }
-  .date-axis-bar { flex: 1; position: relative; height: 16px; }
+  .col-header .col-cov { width: 60px; min-width: 60px; justify-content: flex-end; }
+  .col-header .col-timeline { flex: 1; position: relative; cursor: default; padding: 0; }
   .date-tick {
-    position: absolute; top: 0; font-size: 9px; color: #888;
-    border-left: 1px solid #ccc; padding-left: 2px; height: 100%;
-    line-height: 16px; white-space: nowrap;
+    position: absolute; bottom: 2px; font-size: 9px; color: #888;
+    border-left: 1px solid #ccc; padding-left: 2px;
+    white-space: nowrap; font-weight: normal;
   }
 
   .coin-row {
@@ -137,6 +131,7 @@ async function loadData() {
     GAP_DATA = await resp.json();
   }
   render();
+  selectExch('Binance');
 }
 
 function fmtDate(iso) {
@@ -196,16 +191,11 @@ function getExchSummary(exch) {
   return { totalCoins, withGaps, avgCov, mergedGaps: mergeIntervals(allIntervals), mergedEdges: mergeIntervals(listingEdges) };
 }
 
-function buildDateAxis() {
+function buildDateTicks(timelineDiv) {
   const globalStart = new Date(GAP_DATA.data_start).getTime();
   const globalEnd = new Date(GAP_DATA.data_end).getTime();
   const globalSpan = globalEnd - globalStart;
   const DAY_MS = 86400000;
-  const dateAxis = document.createElement('div');
-  dateAxis.className = 'date-axis';
-  dateAxis.innerHTML = '<div class="date-axis-spacer"></div>';
-  const axisBar = document.createElement('div');
-  axisBar.className = 'date-axis-bar';
   for (let t = globalStart; t <= globalEnd; t += 3 * DAY_MS) {
     const d = new Date(t);
     const pct = (t - globalStart) / globalSpan * 100;
@@ -214,10 +204,8 @@ function buildDateAxis() {
     tick.className = 'date-tick';
     tick.style.left = pct + '%';
     tick.textContent = `${mon} ${d.getUTCDate()}`;
-    axisBar.appendChild(tick);
+    timelineDiv.appendChild(tick);
   }
-  dateAxis.appendChild(axisBar);
-  return dateAxis;
 }
 
 function renderExchBar(barWrap, mergedGaps, mergedEdges) {
@@ -311,10 +299,21 @@ function renderCoinDetail(container, exch) {
   const arrowStr = (col) => st.col === col ? (st.asc ? ' \u25B2' : ' \u25BC') : '';
   const hdr = document.createElement('div');
   hdr.className = 'col-header';
-  hdr.innerHTML = `<div class="col col-name ${st.col==='name'?'active':''}" data-col="name">Coin${arrowStr('name')}</div>`
-    + `<div class="col col-cov ${st.col==='coverage'?'active':''}" data-col="coverage">Cov %${arrowStr('coverage')}</div>`
-    + `<div style="flex:1;font-size:10px;padding:2px 8px;color:#666">Timeline</div>`;
-  hdr.querySelectorAll('.col').forEach(el => {
+  const colName = document.createElement('div');
+  colName.className = 'col col-name' + (st.col==='name' ? ' active' : '');
+  colName.dataset.col = 'name';
+  colName.textContent = 'Coin' + arrowStr('name');
+  const colCov = document.createElement('div');
+  colCov.className = 'col col-cov' + (st.col==='coverage' ? ' active' : '');
+  colCov.dataset.col = 'coverage';
+  colCov.textContent = 'Cov %' + arrowStr('coverage');
+  const colTimeline = document.createElement('div');
+  colTimeline.className = 'col col-timeline';
+  buildDateTicks(colTimeline);
+  hdr.appendChild(colName);
+  hdr.appendChild(colCov);
+  hdr.appendChild(colTimeline);
+  [colName, colCov].forEach(el => {
     el.onclick = (e) => {
       e.stopPropagation();
       const col = el.dataset.col;
@@ -324,7 +323,6 @@ function renderCoinDetail(container, exch) {
     };
   });
   container.appendChild(hdr);
-  container.appendChild(buildDateAxis());
 
   coins.forEach((coin, idx) => {
     const info = exchData[coin];
