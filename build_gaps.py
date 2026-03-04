@@ -10,6 +10,7 @@ import pandas as pd
 
 BASE = os.path.dirname(__file__)
 PARQUET = os.path.join(BASE, "raw", "l2_orderbook_1min.parquet")
+SYMBOLS_JSON = os.path.join(BASE, "raw", "symbols.json")
 OUT = os.path.join(BASE, "gaps", "gaps.json")
 
 EXCH_MAP = {
@@ -32,11 +33,11 @@ df["exchange"] = df["exchange"].map(EXCH_MAP)
 df["coin"] = df["symbol"]  # already normalized in L2 data
 df["minute_utc"] = pd.to_datetime(df["minute_utc"])
 
-# ── Filter to coins on 2+ exchanges ─────────────────────────────────────────
-coin_exch_count = df.groupby("coin")["exchange"].nunique()
-multi_exch_coins = set(coin_exch_count[coin_exch_count >= 2].index)
-df = df[df["coin"].isin(multi_exch_coins)]
-print(f"  {len(multi_exch_coins)} coins on 2+ exchanges, {len(df):,} rows after filter")
+# ── Filter to symbols in symbols.json ───────────────────────────────────────
+with open(SYMBOLS_JSON) as f:
+    allowed_coins = {s["base"] for s in json.load(f)["symbols"]}
+df = df[df["coin"].isin(allowed_coins)]
+print(f"  Filtered to {len(allowed_coins)} symbols from symbols.json, {len(df):,} rows")
 
 # Global data range
 data_start = df["minute_utc"].min()
