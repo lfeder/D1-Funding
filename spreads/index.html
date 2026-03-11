@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>L2 Spread Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #f5f5f0; color: #222; font-family: monospace; font-size: 11px; padding: 16px; }
+  h2 { font-size: 14px; margin-bottom: 4px; }
+  p.sub { color: #666; font-size: 10px; margin-bottom: 12px; }
+
+  .top-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+  .legend { display: flex; gap: 16px; font-size: 10px; color: #666; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+  .toggle-group { display: flex; gap: 0; }
+  .toggle-btn {
+    padding: 3px 10px; font-family: monospace; font-size: 10px;
+    border: 1px solid #999; background: #e8e8e2; cursor: pointer; color: #444;
+  }
+  .toggle-btn:first-child { border-radius: 3px 0 0 3px; }
+  .toggle-btn:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+  .toggle-btn.active { background: #3a6ea8; color: #fff; border-color: #3a6ea8; }
+
+  /* ── Shared column widths ── */
+  .col-name-w { width: 100px; min-width: 100px; }
+  .col-stat-w { width: 70px; min-width: 70px; }
+
+  /* ── Exchange summary rows ── */
+  #exch-summary { margin-bottom: 0; }
+  .exch-header {
+    display: flex; align-items: center; padding: 3px 0;
+    border-bottom: 2px solid #bbb; background: #e0e0d8;
+    font-size: 10px; font-weight: bold; color: #444;
+  }
+  .exch-header div { padding: 0 8px; }
+  .exch-row {
+    display: flex; align-items: center; padding: 3px 0; cursor: pointer;
+    border-bottom: 1px solid #d8d8d0;
+  }
+  .exch-row:hover { background: #eeeee8; }
+  .exch-row.even { background: #fafaf5; }
+  .exch-row.even:hover { background: #eeeee8; }
+  .exch-row.selected { background: #dde4ec; }
+  .exch-label {
+    display: flex; align-items: center; gap: 0; font-size: 11px; padding: 0 8px;
+  }
+  .exch-label .ename { font-size: 11px; }
+  .exch-label .estat { text-align: right; padding-right: 12px; font-size: 10px; }
+  .heatmap-wrap {
+    flex: 1; height: 14px; position: relative; background: #ddd;
+    border-radius: 2px; overflow: hidden;
+  }
+  .heatmap-wrap canvas { width: 100%; height: 100%; display: block; }
+
+  /* ── Coin detail area ── */
+  #coin-detail { display: none; border-top: 2px solid #aaa; margin-top: 4px; }
+  #coin-detail.open { display: block; }
+  #coin-detail-header {
+    padding: 6px 8px; background: #e0e0d8; font-size: 12px; font-weight: bold;
+    border-bottom: 1px solid #ccc;
+  }
+  .coin-detail-inner { max-height: calc(100vh - 260px); overflow-y: auto; }
+
+  .col-header {
+    display: flex; align-items: stretch; padding: 0;
+    border-bottom: 2px solid #bbb; background: #e8e8e2; position: sticky; top: 0; z-index: 1;
+  }
+  .col-header .col {
+    padding: 4px 8px; cursor: pointer; font-weight: bold; font-size: 10px;
+    user-select: none; color: #444; display: flex; align-items: flex-end;
+  }
+  .col-header .col:hover { color: #000; }
+  .col-header .col.active { color: #3a6ea8; }
+  .col-header .col-stat { justify-content: flex-end; padding-right: 12px; }
+  .col-header .col-timeline { flex: 1; position: relative; cursor: default; padding: 0; }
+  .date-tick {
+    position: absolute; bottom: 2px; font-size: 9px; color: #888;
+    border-left: 1px solid #ccc; padding-left: 2px;
+    white-space: nowrap; font-weight: normal;
+  }
+
+  .coin-row {
+    display: flex; align-items: center; padding: 3px 0; cursor: pointer;
+    border-bottom: 1px solid #e0e0d8;
+  }
+  .coin-row:hover { background: #eeeee8; }
+  .coin-row.even { background: #fafaf5; }
+  .coin-row.even:hover { background: #eeeee8; }
+  .coin-label {
+    display: flex; align-items: center; gap: 0; font-size: 11px; padding: 0 8px;
+  }
+  .coin-label .name { font-weight: bold; }
+  .coin-label .stat { text-align: right; padding-right: 12px; font-size: 10px; }
+
+  .coin-detail-panel {
+    display: none; background: #f9f9f4; border: 1px solid #ddd; border-radius: 4px;
+    margin: 3px 0 6px 170px; padding: 8px 12px; font-size: 10px;
+  }
+  .coin-detail-panel.open { display: block; }
+
+  /* ── Tooltip ── */
+  #tooltip {
+    display: none; position: fixed; background: #333; color: #fff;
+    padding: 4px 8px; border-radius: 3px; font-size: 10px; font-family: monospace;
+    white-space: nowrap; z-index: 100; pointer-events: none; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<h2>L2 Spread Viewer</h2>
+<p class="sub">Bid/offer spread at $10k impact (round-trip bps) &nbsp;|&nbsp; 30-min buckets &nbsp;|&nbsp; click exchange for per-coin detail</p>
+
+<div class="top-bar">
+  <div class="toggle-group">
+    <button class="toggle-btn active" data-mode="median">Median</button>
+    <button class="toggle-btn" data-mode="max">Max</button>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#1a9641"></div> &le;5 bps</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#a6d96a"></div> 10 bps</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fee08b"></div> 15 bps</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#f46d43"></div> 25 bps</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d73027"></div> &ge;40 bps</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ddd"></div> No data</div>
+  </div>
+</div>
+
+<div id="exch-summary"></div>
+<div id="coin-detail">
+  <div id="coin-detail-header"></div>
+  <div class="coin-detail-inner" id="coin-detail-inner"></div>
+</div>
+<div id="tooltip"></div>
+
+<script>
+let SD = null;  // spread data
+let mode = 'median';  // or 'max'
+let selectedExch = null;
+const coinSort = {};
+
+const ABBREV = {
+  Aster: 'AS', Binance: 'BN', Bybit: 'BY',
+  Hyperliquid: 'HL', Lighter: 'LT', OKX: 'OK'
+};
+
+// ── Color scale ──────────────────────────────────────────────────────────
+function spreadColor(bps) {
+  if (bps == null) return [221, 221, 221];
+  if (bps <= 5)  return lerpRGB([26,150,65],  [166,217,106], bps / 5);
+  if (bps <= 15) return lerpRGB([166,217,106],[254,224,139], (bps - 5) / 10);
+  if (bps <= 30) return lerpRGB([254,224,139],[244,109,67],  (bps - 15) / 15);
+  if (bps <= 50) return lerpRGB([244,109,67], [215,48,39],   (bps - 30) / 20);
+  return [215, 48, 39];
+}
+
+function lerpRGB(a, b, t) {
+  t = Math.max(0, Math.min(1, t));
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+  ];
+}
+
+function statColor(bps) {
+  if (bps <= 5) return '#1a9641';
+  if (bps <= 10) return '#6aaa3a';
+  if (bps <= 20) return '#c08020';
+  return '#c03';
+}
+
+// ── Canvas heatmap rendering ─────────────────────────────────────────────
+function renderHeatmapCanvas(canvas, arr) {
+  const n = arr.length;
+  canvas.width = n;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(n, 1);
+  for (let i = 0; i < n; i++) {
+    const [r, g, b] = spreadColor(arr[i]);
+    img.data[i * 4] = r;
+    img.data[i * 4 + 1] = g;
+    img.data[i * 4 + 2] = b;
+    img.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ── Tooltip ──────────────────────────────────────────────────────────────
+const tooltip = document.getElementById('tooltip');
+
+function showTooltip(e, arr) {
+  const wrap = e.currentTarget;
+  const rect = wrap.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const frac = x / rect.width;
+  const idx = Math.min(Math.floor(frac * arr.length), arr.length - 1);
+  if (idx < 0) { tooltip.style.display = 'none'; return; }
+
+  const ms = SD.bucket_ms[idx];
+  const d = new Date(ms);
+  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const dateStr = `${mon} ${day} ${hh}:${mm}`;
+
+  const val = arr[idx];
+  const valStr = val != null ? val.toFixed(1) + ' bps' : 'no data';
+
+  tooltip.innerHTML = `${dateStr}<br>${mode}: ${valStr}`;
+  tooltip.style.display = 'block';
+  tooltip.style.left = (e.clientX + 12) + 'px';
+  tooltip.style.top = (e.clientY - 30) + 'px';
+}
+
+function hideTooltip() { tooltip.style.display = 'none'; }
+
+// ── Date ticks ───────────────────────────────────────────────────────────
+function buildDateTicks(timelineDiv) {
+  const startMs = SD.bucket_ms[0];
+  const endMs = SD.bucket_ms[SD.bucket_ms.length - 1];
+  const span = endMs - startMs;
+  const DAY_MS = 86400000;
+  for (let t = startMs; t <= endMs; t += 3 * DAY_MS) {
+    const d = new Date(t);
+    const pct = (t - startMs) / span * 100;
+    const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+    const tick = document.createElement('div');
+    tick.className = 'date-tick';
+    tick.style.left = pct + '%';
+    tick.textContent = `${mon} ${d.getUTCDate()}`;
+    timelineDiv.appendChild(tick);
+  }
+}
+
+// ── Select exchange ──────────────────────────────────────────────────────
+function selectExch(exch) {
+  if (selectedExch === exch) {
+    selectedExch = null;
+    document.getElementById('coin-detail').classList.remove('open');
+    document.querySelectorAll('.exch-row.selected').forEach(r => r.classList.remove('selected'));
+    return;
+  }
+  selectedExch = exch;
+  document.querySelectorAll('.exch-row.selected').forEach(r => r.classList.remove('selected'));
+  document.querySelector(`.exch-row[data-exch="${exch}"]`).classList.add('selected');
+  const panel = document.getElementById('coin-detail');
+  panel.classList.add('open');
+  const abbr = ABBREV[exch] || exch;
+  const nCoins = Object.keys(SD.spreads[exch]).length;
+  document.getElementById('coin-detail-header').textContent = `${exch} (${abbr}) \u2014 ${nCoins} coins`;
+  renderCoinDetail(document.getElementById('coin-detail-inner'), exch);
+}
+
+// ── Render exchange summary ──────────────────────────────────────────────
+function render() {
+  const container = document.getElementById('exch-summary');
+  container.innerHTML = '';
+
+  const exchOrder = SD.exchanges.slice().sort((a, b) => {
+    return SD.exchange_summary[a].median_bps - SD.exchange_summary[b].median_bps;
+  });
+
+  const hdr = document.createElement('div');
+  hdr.className = 'exch-header';
+  hdr.innerHTML = '<div class="col-name-w">Exchange</div>'
+    + '<div class="col-stat-w" style="text-align:right;padding-right:12px">Med bps</div>'
+    + '<div style="flex:1">Spread Timeline</div>';
+  container.appendChild(hdr);
+
+  exchOrder.forEach((exch, ei) => {
+    const s = SD.exchange_summary[exch];
+    const abbr = ABBREV[exch] || exch;
+    const row = document.createElement('div');
+    row.className = 'exch-row' + (ei % 2 === 0 ? ' even' : '');
+    row.dataset.exch = exch;
+
+    const label = document.createElement('div');
+    label.className = 'exch-label';
+    label.innerHTML = `<span class="ename col-name-w">${abbr} (${s.n_coins})</span>`
+      + `<span class="estat col-stat-w" style="color:${statColor(s.median_bps)}">${s.median_bps}</span>`;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'heatmap-wrap';
+    const canvas = document.createElement('canvas');
+    canvas.style.imageRendering = 'pixelated';
+    renderHeatmapCanvas(canvas, s[mode]);
+    wrap.appendChild(canvas);
+
+    const arr = s[mode];
+    wrap.addEventListener('mousemove', e => showTooltip(e, arr));
+    wrap.addEventListener('mouseleave', hideTooltip);
+
+    row.appendChild(label);
+    row.appendChild(wrap);
+    row.onclick = () => selectExch(exch);
+    container.appendChild(row);
+    if (selectedExch === exch) row.classList.add('selected');
+  });
+}
+
+// ── Render coin detail ───────────────────────────────────────────────────
+function renderCoinDetail(container, exch) {
+  container.innerHTML = '';
+  const exchData = SD.spreads[exch];
+
+  if (!coinSort[exch]) coinSort[exch] = { col: 'spread', asc: true };
+  const st = coinSort[exch];
+
+  const coins = Object.keys(exchData).sort((a, b) => {
+    let cmp;
+    if (st.col === 'name') cmp = a.localeCompare(b);
+    else cmp = exchData[a].median_bps - exchData[b].median_bps;
+    return st.asc ? cmp : -cmp;
+  });
+
+  const arrowStr = (col) => st.col === col ? (st.asc ? ' \u25B2' : ' \u25BC') : '';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'col-header';
+  const colName = document.createElement('div');
+  colName.className = 'col col-name-w' + (st.col === 'name' ? ' active' : '');
+  colName.dataset.col = 'name';
+  colName.textContent = 'Coin' + arrowStr('name');
+  const colStat = document.createElement('div');
+  colStat.className = 'col col-stat-w col-stat' + (st.col === 'spread' ? ' active' : '');
+  colStat.dataset.col = 'spread';
+  colStat.textContent = 'Med bps' + arrowStr('spread');
+  const colTimeline = document.createElement('div');
+  colTimeline.className = 'col col-timeline';
+  buildDateTicks(colTimeline);
+  hdr.appendChild(colName);
+  hdr.appendChild(colStat);
+  hdr.appendChild(colTimeline);
+  [colName, colStat].forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const col = el.dataset.col;
+      if (st.col === col) st.asc = !st.asc;
+      else { st.col = col; st.asc = col === 'name'; }
+      renderCoinDetail(container, exch);
+    };
+  });
+  container.appendChild(hdr);
+
+  coins.forEach((coin, idx) => {
+    const info = exchData[coin];
+    const wrapper = document.createElement('div');
+
+    const row = document.createElement('div');
+    row.className = 'coin-row' + (idx % 2 === 0 ? ' even' : '');
+
+    const label = document.createElement('div');
+    label.className = 'coin-label';
+    label.innerHTML = `<span class="name col-name-w">${coin}</span>`
+      + `<span class="stat col-stat-w" style="color:${statColor(info.median_bps)}">${info.median_bps}</span>`;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'heatmap-wrap';
+    const canvas = document.createElement('canvas');
+    canvas.style.imageRendering = 'pixelated';
+    renderHeatmapCanvas(canvas, info[mode]);
+    wrap.appendChild(canvas);
+
+    const arr = info[mode];
+    wrap.addEventListener('mousemove', e => showTooltip(e, arr));
+    wrap.addEventListener('mouseleave', hideTooltip);
+
+    row.appendChild(label);
+    row.appendChild(wrap);
+    wrapper.appendChild(row);
+
+    // Click to expand detail panel
+    const detail = document.createElement('div');
+    detail.className = 'coin-detail-panel';
+    row.onclick = (e) => {
+      e.stopPropagation();
+      const isOpen = detail.classList.contains('open');
+      container.querySelectorAll('.coin-detail-panel.open').forEach(p => p.classList.remove('open'));
+      if (!isOpen) {
+        if (!detail.dataset.built) {
+          const medArr = info.median.filter(v => v != null);
+          const maxArr = info.max.filter(v => v != null);
+          const pct = (arr) => {
+            const s = arr.slice().sort((a, b) => a - b);
+            return (p) => s[Math.floor(p / 100 * (s.length - 1))];
+          };
+          const mp = pct(medArr);
+          const xp = pct(maxArr);
+          const coverage = ((medArr.length / SD.n_buckets) * 100).toFixed(1);
+          detail.innerHTML = `<b>${coin}</b> on ${exch}<br>`
+            + `Coverage: ${coverage}% of buckets<br>`
+            + `Median spread &mdash; p5: ${mp(5).toFixed(1)}, p25: ${mp(25).toFixed(1)}, `
+            + `p50: ${mp(50).toFixed(1)}, p75: ${mp(75).toFixed(1)}, p95: ${mp(95).toFixed(1)} bps<br>`
+            + `Max spread &mdash; p5: ${xp(5).toFixed(1)}, p25: ${xp(25).toFixed(1)}, `
+            + `p50: ${xp(50).toFixed(1)}, p75: ${xp(75).toFixed(1)}, p95: ${xp(95).toFixed(1)} bps`;
+          detail.dataset.built = '1';
+        }
+        detail.classList.add('open');
+      }
+    };
+
+    wrapper.appendChild(detail);
+    container.appendChild(wrapper);
+  });
+}
+
+// ── Toggle mode ──────────────────────────────────────────────────────────
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+  btn.onclick = () => {
+    mode = btn.dataset.mode;
+    document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render();
+    if (selectedExch) {
+      document.querySelector(`.exch-row[data-exch="${selectedExch}"]`).classList.add('selected');
+      renderCoinDetail(document.getElementById('coin-detail-inner'), selectedExch);
+    }
+  };
+});
+
+// ── Load ─────────────────────────────────────────────────────────────────
+async function loadData() {
+  if (typeof INLINE_DATA !== 'undefined') {
+    SD = INLINE_DATA;
+  } else {
+    const resp = await fetch('spreads.json');
+    SD = await resp.json();
+  }
+  render();
+  selectExch('Binance');
+}
+
+loadData();
+</script>
+</body>
+</html>
