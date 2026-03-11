@@ -119,7 +119,6 @@
   <div class="toggle-group">
     <button class="toggle-btn active" data-mode="median">Median</button>
     <button class="toggle-btn" data-mode="max">Max</button>
-    <button class="toggle-btn" data-mode="p25_8h">8h25%</button>
   </div>
   <div class="legend">
     <div class="legend-item"><div class="legend-swatch" style="background:#1a9641"></div> &le;5 bps</div>
@@ -139,9 +138,9 @@
 <div id="tooltip"></div>
 
 <script>
-const MODE_LABELS = { median: 'median', max: 'max', p25_8h: '8h25%' };
-const MODE_STAT_KEY = { median: 'median_bps', max: 'max_bps', p25_8h: 'p25_8h_bps' };
-const MODE_COL_LABEL = { median: 'Med bps', max: 'Max bps', p25_8h: '8h25% bps' };
+const MODE_LABELS = { median: 'median', max: 'max' };
+const MODE_STAT_KEY = { median: 'median_bps', max: 'max_bps' };
+const MODE_COL_LABEL = { median: 'Med bps', max: 'Max bps' };
 let BD = null;  // bidask data
 let mode = 'median';
 let selectedExch = null;
@@ -395,23 +394,19 @@ function renderCoinDetail(container, exch) {
         if (!detail.dataset.built) {
           const medArr = info.median.filter(v => v != null);
           const maxArr = info.max.filter(v => v != null);
-          const p25Arr = info.p25_8h.filter(v => v != null);
           const pct = (arr) => {
             const s = arr.slice().sort((a, b) => a - b);
             return (p) => s[Math.floor(p / 100 * (s.length - 1))];
           };
           const mp = pct(medArr);
           const xp = pct(maxArr);
-          const pp = pct(p25Arr);
           const coverage = ((medArr.length / BD.n_buckets) * 100).toFixed(1);
           detail.innerHTML = `<b>${coin}</b> on ${exch}<br>`
             + `Coverage: ${coverage}% of buckets<br>`
             + `Median &mdash; p5: ${mp(5).toFixed(1)}, p25: ${mp(25).toFixed(1)}, `
             + `p50: ${mp(50).toFixed(1)}, p75: ${mp(75).toFixed(1)}, p95: ${mp(95).toFixed(1)} bps<br>`
             + `Max &mdash; p5: ${xp(5).toFixed(1)}, p25: ${xp(25).toFixed(1)}, `
-            + `p50: ${xp(50).toFixed(1)}, p75: ${xp(75).toFixed(1)}, p95: ${xp(95).toFixed(1)} bps<br>`
-            + `8h25% &mdash; p5: ${pp(5).toFixed(1)}, p25: ${pp(25).toFixed(1)}, `
-            + `p50: ${pp(50).toFixed(1)}, p75: ${pp(75).toFixed(1)}, p95: ${pp(95).toFixed(1)} bps`;
+            + `p50: ${xp(50).toFixed(1)}, p75: ${xp(75).toFixed(1)}, p95: ${xp(95).toFixed(1)} bps`;
           detail.dataset.built = '1';
         }
         detail.classList.add('open');

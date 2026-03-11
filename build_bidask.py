@@ -2,7 +2,7 @@
 
 Reads raw/l2_orderbook_1min_0309.parquet and computes per-exchange, per-coin
 bid/ask at $10k impact, aggregated to 30-minute buckets.
-Three views: median, max, and 8h25% (avg of tightest 25% over forward 8h).
+Two views: median and max.
 Only includes coins present on 2+ exchanges.
 """
 import json
@@ -69,27 +69,19 @@ agg = df.groupby(["exchange", "coin", "bucket"])["bidask_bps"].agg(["median", "m
 agg.columns = ["median", "max"]
 agg = agg.reset_index()
 
-# ── Compute 4h25%: for each bucket, forward 4h window at minute level ──────
-print("Computing 8h25% (this takes a while)...")
-FORWARD_MINUTES = 480  # 8 hours
-FORWARD_BUCKETS = FORWARD_MINUTES // 30  # 16 buckets
-
-# Pre-index minute-level data for fast lookup
-# For each (exchange, coin), build a Series indexed by minute_utc
-df_sorted = df[["exchange", "coin", "minute_utc", "bidask_bps"]].sort_values("minute_utc")
-
 exchanges = sorted(df["exchange"].unique())
 bidask_data = {exch: {} for exch in exchanges}
 
-ec_groups = df_sorted.groupby(["exchange", "coin"])
-total_groups = len(ec_groups)
-print(f"  Processing {total_groups} exchange+coin groups...")
-
 # Pre-build agg lookup
+print("Building per-coin arrays...")
 agg_lookup = {}
 for _, row in agg.iterrows():
     key = (row["exchange"], row["coin"], row["bucket"])
     agg_lookup[key] = (round(float(row["median"]), 1), round(float(row["max"]), 1))
+
+ec_groups = agg.groupby(["exchange", "coin"])
+total_groups = len(ec_groups)
+print(f"  Processing {total_groups} exchange+coin groups...")
 
 for gi, ((exch, coin), grp) in enumerate(ec_groups):
     if (gi + 1) % 50 == 0 or (gi + 1) == total_groups:
@@ -97,7 +89,6 @@ for gi, ((exch, coin), grp) in enumerate(ec_groups):
 
     median_arr = [None] * n_buckets
     max_arr = [None] * n_buckets
-    p25_arr = [None] * n_buckets
 
     # Fill median/max from agg lookup
     overall_medians = []
@@ -108,32 +99,13 @@ for gi, ((exch, coin), grp) in enumerate(ec_groups):
             overall_medians.append(median_arr[bi])
 
     overall_median = round(float(np.median(overall_medians)), 1) if overall_medians else None
-
-    # For 4h25%: get minute-level values as sorted array by minute
-    minute_vals = grp[["minute_utc", "bidask_bps"]].copy()
-    minute_vals = minute_vals.set_index("minute_utc").sort_index()
-
-    for bi, bucket in enumerate(all_buckets):
-        window_start = bucket
-        window_end = bucket + pd.Timedelta(hours=8)
-        window = minute_vals.loc[window_start:window_end - pd.Timedelta(minutes=1), "bidask_bps"]
-        if len(window) == 0:
-            continue
-        # p25 threshold, then average values at or below it
-        p25_val = np.percentile(window.values, 25)
-        tight = window.values[window.values <= p25_val]
-        p25_arr[bi] = round(float(tight.mean()), 1)
-
     overall_max = round(float(np.median([v for v in max_arr if v is not None])), 1) if any(v is not None for v in max_arr) else None
-    overall_p25 = round(float(np.median([v for v in p25_arr if v is not None])), 1) if any(v is not None for v in p25_arr) else None
 
     bidask_data[exch][coin] = {
         "median_bps": overall_median,
         "max_bps": overall_max,
-        "p25_8h_bps": overall_p25,
         "median": median_arr,
         "max": max_arr,
-        "p25_8h": p25_arr,
     }
 
 # ── Exchange-level summary arrays ───────────────────────────────────────────
@@ -144,29 +116,22 @@ for exch in exchanges:
     n_coins = len(coins)
     median_summary = [None] * n_buckets
     max_summary = [None] * n_buckets
-    p25_summary = [None] * n_buckets
     for bi in range(n_buckets):
         med_vals = [c["median"][bi] for c in coins.values() if c["median"][bi] is not None]
         max_vals = [c["max"][bi] for c in coins.values() if c["max"][bi] is not None]
-        p25_vals = [c["p25_8h"][bi] for c in coins.values() if c["p25_8h"][bi] is not None]
         if med_vals:
             median_summary[bi] = round(float(np.median(med_vals)), 1)
         if max_vals:
             max_summary[bi] = round(float(np.median(max_vals)), 1)
-        if p25_vals:
-            p25_summary[bi] = round(float(np.median(p25_vals)), 1)
 
     overall_med = round(float(np.median([c["median_bps"] for c in coins.values() if c["median_bps"] is not None])), 1)
     overall_max = round(float(np.median([c["max_bps"] for c in coins.values() if c["max_bps"] is not None])), 1)
-    overall_p25 = round(float(np.median([c["p25_8h_bps"] for c in coins.values() if c["p25_8h_bps"] is not None])), 1)
     exch_summary[exch] = {
         "n_coins": n_coins,
         "median_bps": overall_med,
         "max_bps": overall_max,
-        "p25_8h_bps": overall_p25,
         "median": median_summary,
         "max": max_summary,
-        "p25_8h": p25_summary,
     }
 
 # ── Write output ─────────────────────────────────────────────────────────────
