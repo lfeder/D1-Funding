@@ -140,6 +140,8 @@
 
 <script>
 const MODE_LABELS = { median: 'median', max: 'max', p25_8h: '8h25%' };
+const MODE_STAT_KEY = { median: 'median_bps', max: 'max_bps', p25_8h: 'p25_8h_bps' };
+const MODE_COL_LABEL = { median: 'Med bps', max: 'Max bps', p25_8h: '8h25% bps' };
 let BD = null;  // bidask data
 let mode = 'median';
 let selectedExch = null;
@@ -265,20 +267,22 @@ function render() {
   const container = document.getElementById('exch-summary');
   container.innerHTML = '';
 
+  const statKey = MODE_STAT_KEY[mode];
   const exchOrder = BD.exchanges.slice().sort((a, b) => {
-    return BD.exchange_summary[a].median_bps - BD.exchange_summary[b].median_bps;
+    return BD.exchange_summary[a][statKey] - BD.exchange_summary[b][statKey];
   });
 
   const hdr = document.createElement('div');
   hdr.className = 'exch-header';
   hdr.innerHTML = '<div class="col-name-w">Exchange</div>'
-    + '<div class="col-stat-w" style="text-align:right;padding-right:12px">Med bps</div>'
+    + `<div class="col-stat-w" style="text-align:right;padding-right:12px">${MODE_COL_LABEL[mode]}</div>`
     + '<div style="flex:1">Bid/Ask Timeline</div>';
   container.appendChild(hdr);
 
   exchOrder.forEach((exch, ei) => {
     const s = BD.exchange_summary[exch];
     const abbr = ABBREV[exch] || exch;
+    const statVal = s[statKey];
     const row = document.createElement('div');
     row.className = 'exch-row' + (ei % 2 === 0 ? ' even' : '');
     row.dataset.exch = exch;
@@ -286,7 +290,7 @@ function render() {
     const label = document.createElement('div');
     label.className = 'exch-label';
     label.innerHTML = `<span class="ename col-name-w">${abbr} (${s.n_coins})</span>`
-      + `<span class="estat col-stat-w" style="color:${statColor(s.median_bps)}">${s.median_bps}</span>`;
+      + `<span class="estat col-stat-w" style="color:${statColor(statVal)}">${statVal}</span>`;
 
     const wrap = document.createElement('div');
     wrap.className = 'heatmap-wrap';
@@ -315,10 +319,11 @@ function renderCoinDetail(container, exch) {
   if (!coinSort[exch]) coinSort[exch] = { col: 'bidask', asc: true };
   const st = coinSort[exch];
 
+  const coinStatKey = MODE_STAT_KEY[mode];
   const coins = Object.keys(exchData).sort((a, b) => {
     let cmp;
     if (st.col === 'name') cmp = a.localeCompare(b);
-    else cmp = exchData[a].median_bps - exchData[b].median_bps;
+    else cmp = exchData[a][coinStatKey] - exchData[b][coinStatKey];
     return st.asc ? cmp : -cmp;
   });
 
@@ -333,7 +338,7 @@ function renderCoinDetail(container, exch) {
   const colStat = document.createElement('div');
   colStat.className = 'col col-stat-w col-stat' + (st.col === 'bidask' ? ' active' : '');
   colStat.dataset.col = 'bidask';
-  colStat.textContent = 'Med bps' + arrowStr('bidask');
+  colStat.textContent = MODE_COL_LABEL[mode] + arrowStr('bidask');
   const colTimeline = document.createElement('div');
   colTimeline.className = 'col col-timeline';
   buildDateTicks(colTimeline);
@@ -360,8 +365,9 @@ function renderCoinDetail(container, exch) {
 
     const label = document.createElement('div');
     label.className = 'coin-label';
+    const coinStatVal = info[coinStatKey];
     label.innerHTML = `<span class="name col-name-w">${coin}</span>`
-      + `<span class="stat col-stat-w" style="color:${statColor(info.median_bps)}">${info.median_bps}</span>`;
+      + `<span class="stat col-stat-w" style="color:${statColor(coinStatVal)}">${coinStatVal}</span>`;
 
     const wrap = document.createElement('div');
     wrap.className = 'heatmap-wrap';

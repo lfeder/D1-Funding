@@ -124,8 +124,13 @@ for gi, ((exch, coin), grp) in enumerate(ec_groups):
         tight = window.values[window.values <= p25_val]
         p25_arr[bi] = round(float(tight.mean()), 1)
 
+    overall_max = round(float(np.median([v for v in max_arr if v is not None])), 1) if any(v is not None for v in max_arr) else None
+    overall_p25 = round(float(np.median([v for v in p25_arr if v is not None])), 1) if any(v is not None for v in p25_arr) else None
+
     bidask_data[exch][coin] = {
         "median_bps": overall_median,
+        "max_bps": overall_max,
+        "p25_8h_bps": overall_p25,
         "median": median_arr,
         "max": max_arr,
         "p25_8h": p25_arr,
@@ -151,10 +156,14 @@ for exch in exchanges:
         if p25_vals:
             p25_summary[bi] = round(float(np.median(p25_vals)), 1)
 
-    overall = round(float(np.median([c["median_bps"] for c in coins.values() if c["median_bps"] is not None])), 1)
+    overall_med = round(float(np.median([c["median_bps"] for c in coins.values() if c["median_bps"] is not None])), 1)
+    overall_max = round(float(np.median([c["max_bps"] for c in coins.values() if c["max_bps"] is not None])), 1)
+    overall_p25 = round(float(np.median([c["p25_8h_bps"] for c in coins.values() if c["p25_8h_bps"] is not None])), 1)
     exch_summary[exch] = {
         "n_coins": n_coins,
-        "median_bps": overall,
+        "median_bps": overall_med,
+        "max_bps": overall_max,
+        "p25_8h_bps": overall_p25,
         "median": median_summary,
         "max": max_summary,
         "p25_8h": p25_summary,
