@@ -2,7 +2,7 @@
 
 Reads raw/l2_orderbook_1min_0309.parquet and computes per-exchange, per-coin
 bid/ask at $10k impact, aggregated to 30-minute buckets.
-Three views: median, max, and 4h25% (avg of tightest 25% over forward 4h).
+Three views: median, max, and 8h25% (avg of tightest 25% over forward 8h).
 Only includes coins present on 2+ exchanges.
 """
 import json
@@ -70,9 +70,9 @@ agg.columns = ["median", "max"]
 agg = agg.reset_index()
 
 # ── Compute 4h25%: for each bucket, forward 4h window at minute level ──────
-print("Computing 4h25% (this takes a while)...")
-FORWARD_MINUTES = 240  # 4 hours
-FORWARD_BUCKETS = FORWARD_MINUTES // 30  # 8 buckets
+print("Computing 8h25% (this takes a while)...")
+FORWARD_MINUTES = 480  # 8 hours
+FORWARD_BUCKETS = FORWARD_MINUTES // 30  # 16 buckets
 
 # Pre-index minute-level data for fast lookup
 # For each (exchange, coin), build a Series indexed by minute_utc
@@ -115,7 +115,7 @@ for gi, ((exch, coin), grp) in enumerate(ec_groups):
 
     for bi, bucket in enumerate(all_buckets):
         window_start = bucket
-        window_end = bucket + pd.Timedelta(hours=4)
+        window_end = bucket + pd.Timedelta(hours=8)
         window = minute_vals.loc[window_start:window_end - pd.Timedelta(minutes=1), "bidask_bps"]
         if len(window) == 0:
             continue
@@ -128,7 +128,7 @@ for gi, ((exch, coin), grp) in enumerate(ec_groups):
         "median_bps": overall_median,
         "median": median_arr,
         "max": max_arr,
-        "p25_4h": p25_arr,
+        "p25_8h": p25_arr,
     }
 
 # ── Exchange-level summary arrays ───────────────────────────────────────────
@@ -143,7 +143,7 @@ for exch in exchanges:
     for bi in range(n_buckets):
         med_vals = [c["median"][bi] for c in coins.values() if c["median"][bi] is not None]
         max_vals = [c["max"][bi] for c in coins.values() if c["max"][bi] is not None]
-        p25_vals = [c["p25_4h"][bi] for c in coins.values() if c["p25_4h"][bi] is not None]
+        p25_vals = [c["p25_8h"][bi] for c in coins.values() if c["p25_8h"][bi] is not None]
         if med_vals:
             median_summary[bi] = round(float(np.median(med_vals)), 1)
         if max_vals:
@@ -157,7 +157,7 @@ for exch in exchanges:
         "median_bps": overall,
         "median": median_summary,
         "max": max_summary,
-        "p25_4h": p25_summary,
+        "p25_8h": p25_summary,
     }
 
 # ── Write output ─────────────────────────────────────────────────────────────
