@@ -403,25 +403,46 @@ def run_sim(data, wide_threshold, wait_entry=True, wait_exit=False, max_position
         print(f"  Capacity-blocked entries: {capacity_blocked}")
         print(f"  Coin-blocked entries: {coin_blocked}")
 
-    # Add zombies (still-open positions) to trade log
+    # Add zombies (still-open positions) with mark-to-market P&L
     last_tick_min = int(unique_mins[-1])
+    last_t = n_ticks - 1
     for pos in active:
         dur = last_tick_min - pos["entry_tick"]
         entry_epoch = pos["entry_tick"] * 60
         exit_epoch = last_tick_min * 60
-        l_ex = pair_names[pos["pair_idx"]][0]
-        s_ex = pair_names[pos["pair_idx"]][1]
-        coin = coins[pos["coin_idx"]]
+        c_idx = pos["coin_idx"]
+        p_idx = pos["pair_idx"]
+        l_ex = pair_names[p_idx][0]
+        s_ex = pair_names[p_idx][1]
+        coin = coins[c_idx]
         l_name = ABBREV[l_ex]
         s_name = ABBREV[s_ex]
+
+        # Mark-to-market spread P&L using last tick prices
+        sell_l = sell_t[last_t, c_idx, pos["l_idx"]]
+        buy_s_val = buy_t[last_t, c_idx, pos["s_idx"]]
+        pl_spread = None
+        if not (np.isnan(sell_l) or np.isnan(buy_s_val) or sell_l <= 0 or buy_s_val <= 0):
+            mid = (pos["entry_buy_l"] + pos["entry_sell_s"]) * 0.5
+            qty = paper_size / mid
+            pl_long = (sell_l - pos["entry_buy_l"]) * qty
+            pl_short = (pos["entry_sell_s"] - buy_s_val) * qty
+            fee_entry = pos["entry_fee"] / 10000 * paper_size
+            fee_exit = pair_fee_ow[p_idx] / 10000 * paper_size
+            pl_spread = round(float(pl_long + pl_short - fee_entry - fee_exit), 2)
 
         fund_l_bp = calc_funding_pl(funding_events, l_ex, coin, entry_epoch, exit_epoch, is_long=True)
         fund_s_bp = calc_funding_pl(funding_events, s_ex, coin, entry_epoch, exit_epoch, is_long=False)
         funding_bp = fund_l_bp + fund_s_bp
         funding_usd = funding_bp / 10000 * paper_size
 
+        pl_total = None
+        if pl_spread is not None:
+            pl_total = round(pl_spread + float(funding_usd), 2)
+
         if not quiet:
-            print(f"    {coin} {l_name}/{s_name}  entry_basis={pos['entry_basis_bp']:.1f}bp  open {dur}min ({dur//60}h)")
+            mtm = f"  mtm=${pl_total:+.0f}" if pl_total is not None else ""
+            print(f"    {coin} {l_name}/{s_name}  entry_basis={pos['entry_basis_bp']:.1f}bp  open {dur}min ({dur//60}h){mtm}")
 
         trade_log.append({
             "coin": coin,
@@ -431,11 +452,11 @@ def run_sim(data, wide_threshold, wait_entry=True, wait_exit=False, max_position
             "exit_date": None,
             "duration_min": dur,
             "entry_basis_bp": round(pos["entry_basis_bp"], 1),
-            "pl_spread_usd": None,
+            "pl_spread_usd": pl_spread,
             "funding_bp": round(float(funding_bp), 2),
             "funding_usd": round(float(funding_usd), 2),
-            "pl_usd": None,
-            "pl_bp": None,
+            "pl_usd": pl_total,
+            "pl_bp": round(pl_total / paper_size * 10000, 1) if pl_total is not None else None,
             "zombie": True,
         })
 

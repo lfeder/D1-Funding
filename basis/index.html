@@ -98,16 +98,6 @@
 <h2>Basis Trade Viewer</h2>
 <p class="sub">Cross-exchange basis trade backtest — Jan 23 to Feb 25, 2026</p>
 
-<div class="rules">
-  <strong>Strategy:</strong> When the same perp is priced differently across exchanges, go long on the cheap exchange and short on the expensive one. Wait for prices to converge, then unwind both sides.<br>
-  <strong>Entry:</strong> <code>entry_basis = (sell_short_exch &minus; buy_long_exch) / mid &times; 10000 &minus; fees</code><br>
-  &emsp;<code>entry_score = entry_basis &minus; median_bidask_long &minus; median_bidask_short</code><br>
-  &emsp;State machine tracks narrow&rarr;wide transitions per (coin, pair). Narrow: <code>entry_basis &lt; 10bp</code>. Wide: <code>entry_score &gt; entry_threshold</code>. Enter on narrow&rarr;wide transition.<br>
-  <strong>Exit:</strong> <code>exit_basis = (buy_short_exch &minus; sell_long_exch) / mid &times; 10000 + fees</code><br>
-  &emsp;Exit when <code>exit_basis &lt; exit_threshold</code>.<br>
-  <strong>P&amp;L:</strong> Spread P&amp;L (entry &minus; exit prices &minus; round-trip fees) + funding rate P&amp;L. One position per coin.
-</div>
-
 <div class="controls">
   <div class="ctrl-group">
     <span class="ctrl-label">Entry:</span>
@@ -151,6 +141,17 @@
 <div class="summary" id="summary"></div>
 
 <div id="grid-wrap"><table class="grid" id="grid"></table></div>
+
+<div class="rules" style="margin-top: 14px;">
+  <strong>Strategy:</strong> When the same perp is priced differently across exchanges, go long on the cheap exchange and short on the expensive one. Wait for prices to converge, then unwind both sides.<br>
+  <strong>Entry:</strong> <code>entry_basis = (sell_short_exch &minus; buy_long_exch) / mid &times; 10000 &minus; fees</code><br>
+  &emsp;<code>entry_score = entry_basis &minus; median_bidask_long &minus; median_bidask_short</code><br>
+  &emsp;State machine tracks narrow&rarr;wide transitions per (coin, pair). Narrow: <code>entry_basis &lt; 10bp</code>. Wide: <code>entry_score &gt; entry_threshold</code>. Enter on narrow&rarr;wide transition.<br>
+  <strong>Exit:</strong> <code>exit_basis = (buy_short_exch &minus; sell_long_exch) / mid &times; 10000 + fees</code><br>
+  &emsp;Exit when <code>exit_basis &lt; exit_threshold</code>.<br>
+  <strong>P&amp;L:</strong> Spread P&amp;L (entry &minus; exit prices &minus; round-trip fees) + funding rate P&amp;L. One position per coin.
+</div>
+
 <div id="tooltip"></div>
 
 <script>
@@ -286,6 +287,30 @@ function renderGrid(trades) {
     return plB - plA;
   });
 
+  // Pre-compute totals by day and grand totals
+  const totalByDay = {};
+  let grandTotal = 0;
+  let grandN = 0;
+  const coinStats = {};
+
+  coins.forEach(coin => {
+    const ct = coinMap[coin];
+    const closed = ct.filter(t => !t.zombie);
+    const pl = closed.reduce((s, t) => s + (t.total_pl || 0), 0);
+    const n = closed.length;
+    grandTotal += pl;
+    grandN += n;
+    coinStats[coin] = { pl, n, total: n + ct.filter(t => t.zombie).length };
+
+    days.forEach(day => {
+      const dayTs = day.ts;
+      const dayEnd = dayTs + 86400;
+      const dayPl = ct.filter(t => !t.zombie && t.exit_ts >= dayTs && t.exit_ts < dayEnd)
+                      .reduce((s, t) => s + (t.total_pl || 0), 0);
+      totalByDay[day.label] = (totalByDay[day.label] || 0) + dayPl;
+    });
+  });
+
   // Build table
   let html = "<thead><tr>";
   html += `<th class="coin-col">Coin</th>`;
@@ -296,24 +321,29 @@ function renderGrid(trades) {
   });
   html += "</tr></thead><tbody>";
 
-  // Total row data
-  const totalByDay = {};
-  let grandTotal = 0;
-  let grandN = 0;
+  // Total row at top
+  const totalPlColor = grandTotal > 0 ? "#6aacf0" : "#e07070";
+  html += `<tr class="total-row">`;
+  html += `<td class="coin-cell">TOTAL</td>`;
+  html += `<td class="pl-cell" style="color:${totalPlColor}">$${grandTotal.toFixed(0)}</td>`;
+  html += `<td class="n-cell">${grandN}</td>`;
+  days.forEach(day => {
+    const dp = totalByDay[day.label] || 0;
+    const c = dp > 0 ? "#6aacf0" : dp < 0 ? "#e07070" : "#555";
+    html += `<td class="pl-cell" style="font-size:9px;color:${c}">${dp !== 0 ? '$' + dp.toFixed(0) : ''}</td>`;
+  });
+  html += `</tr>`;
 
+  // Coin rows
   coins.forEach((coin, ci) => {
     const ct = coinMap[coin];
-    const closed = ct.filter(t => !t.zombie);
-    const pl = closed.reduce((s, t) => s + (t.total_pl || 0), 0);
-    const n = closed.length;
-    grandTotal += pl;
-    grandN += n;
+    const { pl, n, total } = coinStats[coin];
 
     const plColor = pl > 0 ? "#6aacf0" : pl < 0 ? "#e07070" : "#888";
     html += `<tr>`;
     html += `<td class="coin-cell">${coin}</td>`;
     html += `<td class="pl-cell" style="color:${plColor}">$${pl.toFixed(0)}</td>`;
-    html += `<td class="n-cell">${n + ct.filter(t=>t.zombie).length}</td>`;
+    html += `<td class="n-cell">${total}</td>`;
 
     days.forEach(day => {
       const dayTs = day.ts;
@@ -348,34 +378,15 @@ function renderGrid(trades) {
           color = "#c0392b";
         }
 
-        const tid = `t_${coin}_${t.entry_ts}`;
         html += `<div class="trade-block" data-trade='${JSON.stringify(t).replace(/'/g, "&#39;")}'
           style="left:${left}%;width:${width}%;background:${color};"
           onmouseenter="showTip(event,this)" onmouseleave="hideTip()"></div>`;
       });
       html += `</td>`;
-
-      // Accumulate day totals
-      const dayPl = ct.filter(t => !t.zombie && t.exit_ts >= dayTs && t.exit_ts < dayEnd)
-                      .reduce((s, t) => s + (t.total_pl || 0), 0);
-      totalByDay[day.label] = (totalByDay[day.label] || 0) + dayPl;
     });
 
     html += `</tr>`;
   });
-
-  // Total row
-  const totalPlColor = grandTotal > 0 ? "#6aacf0" : "#e07070";
-  html += `<tr class="total-row">`;
-  html += `<td class="coin-cell">TOTAL</td>`;
-  html += `<td class="pl-cell" style="color:${totalPlColor}">$${grandTotal.toFixed(0)}</td>`;
-  html += `<td class="n-cell">${grandN}</td>`;
-  days.forEach(day => {
-    const dp = totalByDay[day.label] || 0;
-    const c = dp > 0 ? "#6aacf0" : dp < 0 ? "#e07070" : "#555";
-    html += `<td class="pl-cell" style="font-size:9px;color:${c}">${dp !== 0 ? '$' + dp.toFixed(0) : ''}</td>`;
-  });
-  html += `</tr>`;
 
   html += "</tbody>";
   document.getElementById("grid").innerHTML = html;
@@ -392,6 +403,14 @@ function showTip(ev, el) {
   let plHtml;
   if (t.zombie) {
     plHtml = `<span class="tt-zombie">Zombie (never converged)</span>`;
+    if (t.spread_pl != null) {
+      const spClass = t.spread_pl >= 0 ? "tt-pos" : "tt-neg";
+      const fuClass = t.funding_pl >= 0 ? "tt-pos" : "tt-neg";
+      const plClass = t.total_pl >= 0 ? "tt-pos" : "tt-neg";
+      plHtml += `<br><span class="tt-label">MTM Spread:</span> <span class="${spClass}">$${t.spread_pl.toFixed(1)}</span>`;
+      plHtml += `<br><span class="tt-label">MTM Funding:</span> <span class="${fuClass}">$${t.funding_pl >= 0 ? '+' : ''}${t.funding_pl.toFixed(1)}</span>`;
+      plHtml += `<br><span class="tt-label">MTM Total:</span> <span class="${plClass}">$${t.total_pl >= 0 ? '+' : ''}${t.total_pl.toFixed(1)}</span>`;
+    }
   } else {
     const plClass = t.total_pl >= 0 ? "tt-pos" : "tt-neg";
     const spClass = t.spread_pl >= 0 ? "tt-pos" : "tt-neg";
