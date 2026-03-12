@@ -18,8 +18,7 @@ ENTRY_THRESHOLDS = [25, 50, 75, 100, 125, 150]
 EXIT_THRESHOLDS = [0, 10, 25]
 SIZES = [10, 100]
 EXCHANGE_FILTERS = [None, "dex"]  # None = all exchanges
-
-MAX_POSITIONS = 9999  # uncapped — viewer shows all trades
+MAX_POSITIONS = [10, 25, 9999]  # 9999 = uncapped
 
 
 def trade_to_dict(t):
@@ -53,24 +52,26 @@ def main():
 
             for entry_bp in ENTRY_THRESHOLDS:
                 for exit_bp in EXIT_THRESHOLDS:
-                    key = f"{size_k}k_{exch_label}_e{entry_bp}_x{exit_bp}"
-                    print(f"  Running {key} ...", end=" ", flush=True)
-                    t0 = time.perf_counter()
-                    trade_log = run_sim(
-                        data, entry_bp,
-                        wait_entry=False,
-                        wait_exit=False,
-                        max_positions=MAX_POSITIONS,
-                        exit_threshold=exit_bp,
-                        quiet=True,
-                    )
-                    elapsed = time.perf_counter() - t0
-                    trades = [trade_to_dict(t) for t in trade_log]
-                    closed = [t for t in trades if not t["zombie"]]
-                    zombies = [t for t in trades if t["zombie"]]
-                    total_pl = sum(t["total_pl"] for t in closed if t["total_pl"] is not None)
-                    print(f"{len(closed)} trades, {len(zombies)} zombies, ${total_pl:+,.0f} in {elapsed:.1f}s")
-                    all_results[key] = trades
+                    for max_pos in MAX_POSITIONS:
+                        max_label = "all" if max_pos == 9999 else str(max_pos)
+                        key = f"{size_k}k_{exch_label}_e{entry_bp}_x{exit_bp}_m{max_label}"
+                        print(f"  Running {key} ...", end=" ", flush=True)
+                        t0 = time.perf_counter()
+                        trade_log = run_sim(
+                            data, entry_bp,
+                            wait_entry=False,
+                            wait_exit=False,
+                            max_positions=max_pos,
+                            exit_threshold=exit_bp,
+                            quiet=True,
+                        )
+                        elapsed = time.perf_counter() - t0
+                        trades = [trade_to_dict(t) for t in trade_log]
+                        closed = [t for t in trades if not t["zombie"]]
+                        zombies = [t for t in trades if t["zombie"]]
+                        total_pl = sum(t["total_pl"] for t in closed if t["total_pl"] is not None)
+                        print(f"{len(closed)} trades, {len(zombies)} zombies, ${total_pl:+,.0f} in {elapsed:.1f}s")
+                        all_results[key] = trades
 
     # Build time range from any dataset
     all_entry_ts = []
@@ -87,6 +88,7 @@ def main():
         "exit_thresholds": EXIT_THRESHOLDS,
         "sizes": SIZES,
         "exchange_filters": ["all", "dex"],
+        "max_positions": [10, 25, "all"],
         "time_range": {
             "start": min(all_entry_ts) if all_entry_ts else 0,
             "end": max(all_exit_ts) if all_exit_ts else 0,

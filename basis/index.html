@@ -124,6 +124,14 @@
     </div>
   </div>
   <div class="ctrl-group">
+    <span class="ctrl-label">Max pos:</span>
+    <div class="toggle-group" id="tg-maxpos">
+      <button class="toggle-btn active" data-val="10">10</button>
+      <button class="toggle-btn" data-val="25">25</button>
+      <button class="toggle-btn" data-val="all">All</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
     <span class="ctrl-label">1-bar filter:</span>
     <div class="toggle-group" id="tg-1bar">
       <button class="toggle-btn" data-val="off">Off</button>
@@ -156,7 +164,7 @@
 
 <script>
 let DATA = null;
-let currentParams = { entry: 50, exit: 10, size: 10, exch: "all", filter1bar: true };
+let currentParams = { entry: 50, exit: 10, size: 10, exch: "all", maxpos: "10", filter1bar: true };
 
 async function loadData() {
   const resp = await fetch("basis.json");
@@ -186,6 +194,7 @@ function initControls() {
 
   setupToggle("tg-size", "size", v => +v);
   setupToggle("tg-exch", "exch", v => v);
+  setupToggle("tg-maxpos", "maxpos", v => v);
   setupToggle("tg-1bar", "filter1bar", v => v === "on");
 }
 
@@ -202,7 +211,7 @@ function setupToggle(id, param, parse) {
 }
 
 function getKey() {
-  return `${currentParams.size}k_${currentParams.exch}_e${currentParams.entry}_x${currentParams.exit}`;
+  return `${currentParams.size}k_${currentParams.exch}_e${currentParams.entry}_x${currentParams.exit}_m${currentParams.maxpos}`;
 }
 
 function render() {
