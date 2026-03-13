@@ -123,6 +123,9 @@
       <tbody id="pnl-body"></tbody>
     </table>
   </div>
+
+  <h3>How the margin math works</h3>
+  <div id="walkthrough" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:12px 16px;line-height:1.7;font-size:11px;max-width:720px"></div>
 </div>
 
 <!-- PAGE 2: Leverage Table -->
@@ -343,6 +346,51 @@ function compute() {
       `<td class="${roiCls}">${roiPrefix}${roi.toFixed(1)}%</td>` +
       '</tr>';
   }).join('');
+
+  // --- Walkthrough ---
+  const $ = v => '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+  const $d = v => '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+  const pct = v => (v * 100).toFixed(1) + '%';
+
+  // Pick a sample big move for the example (use the liq move rounded down to nearest 5%)
+  const sampleMove = Math.floor(liqMove * 100 / 5) * 5 || 5;
+  const samplePct = sampleMove / 100;
+  const sampleLongPnl = posSize * samplePct;
+  const sampleShortPnl = posSize * (-samplePct);
+  const sampleLongEq = longCapital + sampleLongPnl;
+  const sampleShortEq = shortCapital + sampleShortPnl;
+
+  document.getElementById('walkthrough').innerHTML = `
+<b>1. Capital &amp; deployment</b><br>
+Total capital: ${$(totalCapital)}. Deploy ${(deployPct*100).toFixed(0)}% = ${$(totalMargin)} total margin across both exchanges.<br>
+Idle capital (buffer): ${$(totalCapital - totalMargin)} total (split between exchanges).<br><br>
+
+<b>2. Position sizing</b><br>
+${longExch} leverage: ${longLev}x. ${shortExch} leverage: ${shortLev}x.<br>
+To get equal position sizes: P = ${$(totalMargin)} &times; ${longLev} &times; ${shortLev} / (${longLev} + ${shortLev}) = <b>${$(posSize)}</b> per leg.<br>
+${longExch} margin: ${$(posSize)} / ${longLev} = ${$(longMargin)}.<br>
+${shortExch} margin: ${$(posSize)} / ${shortLev} = ${$(shortMargin)}.<br><br>
+
+<b>3. Capital split (equalize liquidation)</b><br>
+We shift capital so both sides have the same equity cushion above maintenance margin.<br>
+${longExch} capital: (${$(totalCapital)} + ${(maintPct*100).toFixed(0)}% &times; (${$(longMargin)} &minus; ${$(shortMargin)})) / 2 = <b>${$(longCapital)}</b><br>
+${shortExch} capital: ${$(totalCapital)} &minus; ${$(longCapital)} = <b>${$(shortCapital)}</b><br>
+${longLev < shortLev ? longExch + ' gets more capital because it uses more margin (lower leverage).' :
+  shortLev < longLev ? shortExch + ' gets more capital because it uses more margin (lower leverage).' :
+  'Equal leverage, so capital splits evenly.'}<br><br>
+
+<b>4. Example: price moves +${sampleMove}%</b><br>
+Long leg (${longExch}): ${$(posSize)} &times; +${sampleMove}% = <b>+${$(sampleLongPnl)}</b> P&amp;L. Account equity: ${$(longCapital)} + ${$(sampleLongPnl)} = ${$(sampleLongEq)}.<br>
+Short leg (${shortExch}): ${$(posSize)} &times; &minus;${sampleMove}% = <b>&minus;${$(Math.abs(sampleShortPnl))}</b> P&amp;L. Account equity: ${$(shortCapital)} &minus; ${$(Math.abs(sampleShortPnl))} = ${$(sampleShortEq)}.<br>
+Net P&amp;L: +${$(sampleLongPnl)} &minus; ${$(Math.abs(sampleShortPnl))} = <b>${$(sampleLongPnl + sampleShortPnl)}</b> (zero for equal-sized positions).<br><br>
+
+<b>5. Liquidation threshold</b><br>
+Maintenance margin = ${(maintPct*100).toFixed(0)}% of deployed margin.<br>
+${longExch}: ${(maintPct*100).toFixed(0)}% &times; ${$(longMargin)} = ${$(maintPct * longMargin)}. Liquidation when equity &le; ${$(maintPct * longMargin)}.<br>
+${shortExch}: ${(maintPct*100).toFixed(0)}% &times; ${$(shortMargin)} = ${$(maintPct * shortMargin)}. Liquidation when equity &le; ${$(maintPct * shortMargin)}.<br>
+Both sides liquidate at the same price move: <b>&plusmn;${pct(liqMove)}</b>.<br>
+At liquidation the losing leg is closed, but the winning leg keeps its gain &mdash; net result is approximately break-even minus fees.
+`;
 }
 
 [coinSel, longExchSel, shortExchSel].forEach(el => {
