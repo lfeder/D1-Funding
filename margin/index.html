@@ -325,8 +325,8 @@ function compute() {
 
     function fmt(v, isLiq) {
       const cls = isLiq ? 'liq' : (v >= 0 ? 'pos' : 'neg');
-      const prefix = v >= 0 ? '+' : '';
-      const display = isLiq ? 'LIQ' : prefix + '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+      const prefix = v >= 0 ? '+$' : '-$';
+      const display = isLiq ? 'LIQ' : prefix + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
       return `<td class="${cls}">${display}</td>`;
     }
     function fmtEq(v, isLiq) {
