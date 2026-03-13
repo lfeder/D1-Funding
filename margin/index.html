@@ -102,8 +102,8 @@
       <select id="short-exch"></select>
     </div>
     <div class="field">
-      <label>Capital per exchange ($)</label>
-      <input id="capital" type="number" value="10000" step="1000" min="100">
+      <label>Total Capital ($)</label>
+      <input id="capital" type="number" value="20000" step="1000" min="100">
     </div>
     <div class="field">
       <label>Deploy %</label>
@@ -244,7 +244,7 @@ longExchSel.value = 'HL';
 shortExchSel.value = 'BN';
 
 function compute() {
-  const capital = parseFloat(capitalIn.value) || 10000;
+  const totalCapital = parseFloat(capitalIn.value) || 20000;
   const deployPct = (parseFloat(deployIn.value) || 50) / 100;
   const maintPct = (parseFloat(maintIn.value) || 30) / 100;
 
@@ -253,30 +253,42 @@ function compute() {
   const shortExch = shortExchSel.value;
   const li = EXCHANGES.indexOf(longExch);
   const si = EXCHANGES.indexOf(shortExch);
-  const longMax = LEV_DATA[coin][li];
-  const shortMax = LEV_DATA[coin][si];
-  const lev = Math.min(longMax, shortMax);
+  const longLev = LEV_DATA[coin][li];
+  const shortLev = LEV_DATA[coin][si];
+  const minLev = Math.min(longLev, shortLev);
+  const maxLev = Math.max(longLev, shortLev);
 
-  const margin = capital * deployPct;
-  const posSize = margin * lev;
-  // Liquidation when equity drops to maintPct * margin
-  // Long: capital + posSize * pct = maintPct * margin → pct = (maintPct * margin - capital) / posSize
-  // Short: capital - posSize * pct = maintPct * margin → pct = (capital - maintPct * margin) / posSize
-  const maintReq = maintPct * margin;
-  const liqMoveLong = (maintReq - capital) / posSize;   // negative number
-  const liqMoveShort = (capital - maintReq) / posSize;  // positive number
+  // Split capital proportionally: lower-leverage side needs more margin
+  // Both legs have the same position size
+  // longMargin * longLev = shortMargin * shortLev = posSize
+  // longCapital + shortCapital = totalCapital
+  // longCapital / shortCapital = longMargin / shortMargin = shortLev / longLev
+  // (higher lev → less capital needed)
+  const longCapital = totalCapital * shortLev / (longLev + shortLev);
+  const shortCapital = totalCapital * longLev / (longLev + shortLev);
+
+  const longMargin = longCapital * deployPct;
+  const shortMargin = shortCapital * deployPct;
+  const posSize = longMargin * longLev;  // = shortMargin * shortLev
+
+  // Maintenance margin on deployed margin
+  const longMaintReq = maintPct * longMargin;
+  const shortMaintReq = maintPct * shortMargin;
+  // Liq: equity = capital + pnl <= maintReq
+  const liqMoveLong = (longMaintReq - longCapital) / posSize;
+  const liqMoveShort = (shortCapital - shortMaintReq) / posSize;
 
   const summary = document.getElementById('summary');
-  const totalCapital = capital * 2;
   const fmtK = v => v >= 1000 ? '$' + (v/1000).toFixed(1) + 'k' : '$' + v.toFixed(0);
+  const longExchLabel = longLev <= shortLev ? `<b>${longExch} ${longLev}x</b>` : `${longExch} ${longLev}x`;
+  const shortExchLabel = shortLev <= longLev ? `<b>${shortExch} ${shortLev}x</b>` : `${shortExch} ${shortLev}x`;
 
   summary.innerHTML = [
-    ['Total Capital (2 exchanges)', fmtK(totalCapital)],
-    ['Margin Used (each leg)', fmtK(margin)],
-    ['Idle Capital (each exch)', fmtK(capital - margin)],
-    ['Position Size (each leg)', fmtK(posSize)],
-    [`Leverage (min of ${longExch} ${longMax}x, ${shortExch} ${shortMax}x)`, lev + 'x'],
-    ['Maint. Margin Req.', fmtK(maintReq)],
+    [`${longExch} Capital (long)`, fmtK(longCapital)],
+    [`${shortExch} Capital (short)`, fmtK(shortCapital)],
+    [`${longExch} Margin (${longLev}x)`, fmtK(longMargin)],
+    [`${shortExch} Margin (${shortLev}x)`, fmtK(shortMargin)],
+    ['Position Size', fmtK(posSize)],
     ['Long Liq Price Move', (liqMoveLong * 100).toFixed(1) + '%'],
     ['Short Liq Price Move', '+' + (liqMoveShort * 100).toFixed(1) + '%'],
   ].map(([label, value]) =>
@@ -291,25 +303,22 @@ function compute() {
   const pbody = document.getElementById('pnl-body');
   phead.innerHTML = '<tr>' +
     '<th style="position:sticky;left:0;z-index:3">Price Δ</th>' +
-    '<th>Long P&L</th><th>Short P&L</th><th>Combined</th>' +
-    '<th>Long Equity</th><th>Short Equity</th>' +
-    '<th>ROI on Capital</th></tr>';
+    `<th>${longExch} Long P&L</th><th>${shortExch} Short P&L</th><th>Combined</th>` +
+    `<th>${longExch} Equity</th><th>${shortExch} Equity</th>` +
+    '<th>ROI</th></tr>';
 
   pbody.innerHTML = moves.map(m => {
     const pct = m / 100;
     const longPnl = posSize * pct;
     const shortPnl = posSize * (-pct);
 
-    // Account equity = full capital + P&L
-    const longEquity = capital + longPnl;
-    const shortEquity = capital + shortPnl;
-    // Liquidated when equity drops to maintenance margin requirement
-    const longLiq = longEquity <= maintReq;
-    const shortLiq = shortEquity <= maintReq;
+    const longEquity = longCapital + longPnl;
+    const shortEquity = shortCapital + shortPnl;
+    const longLiq = longEquity <= longMaintReq;
+    const shortLiq = shortEquity <= shortMaintReq;
 
-    // If liquidated, lose everything above maint margin (approx full capital loss)
-    const effLongPnl = longLiq ? -capital : longPnl;
-    const effShortPnl = shortLiq ? -capital : shortPnl;
+    const effLongPnl = longLiq ? -longCapital : longPnl;
+    const effShortPnl = shortLiq ? -shortCapital : shortPnl;
     const combined = effLongPnl + effShortPnl;
     const roi = combined / totalCapital * 100;
 
