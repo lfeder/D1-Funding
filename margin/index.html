@@ -110,8 +110,8 @@
       <input id="deploy" type="number" value="50" step="5" min="5" max="100">
     </div>
     <div class="field">
-      <label>Leverage (min of both)</label>
-      <select id="lev"></select>
+      <label>Maint. Margin %</label>
+      <input id="maint" type="number" value="30" step="5" min="0" max="100">
     </div>
   </div>
 
@@ -231,9 +231,9 @@ document.querySelectorAll('.tab').forEach(tab => {
 const coinSel = document.getElementById('coin');
 const longExchSel = document.getElementById('long-exch');
 const shortExchSel = document.getElementById('short-exch');
-const levSel = document.getElementById('lev');
 const capitalIn = document.getElementById('capital');
 const deployIn = document.getElementById('deploy');
+const maintIn = document.getElementById('maint');
 
 COINS.forEach(c => coinSel.add(new Option(c, c)));
 EXCHANGES.forEach(e => {
@@ -243,43 +243,32 @@ EXCHANGES.forEach(e => {
 longExchSel.value = 'HL';
 shortExchSel.value = 'BN';
 
-function updateLevOptions() {
-  const coin = coinSel.value;
-  const li = EXCHANGES.indexOf(longExchSel.value);
-  const si = EXCHANGES.indexOf(shortExchSel.value);
-  const maxLev = Math.min(LEV_DATA[coin][li], LEV_DATA[coin][si]);
-
-  const prev = parseInt(levSel.value) || 0;
-  levSel.innerHTML = '';
-  const steps = [1,2,3,5,10,15,20,25,50,75,100,125].filter(x => x <= maxLev);
-  steps.forEach(x => levSel.add(new Option(x + 'x', x)));
-  const best = steps.includes(prev) ? prev : steps[steps.length - 1];
-  levSel.value = best;
-}
-
 function compute() {
   const capital = parseFloat(capitalIn.value) || 10000;
   const deployPct = (parseFloat(deployIn.value) || 50) / 100;
-  const lev = parseInt(levSel.value) || 10;
+  const maintPct = (parseFloat(maintIn.value) || 30) / 100;
 
-  const margin = capital * deployPct;
-  const posSize = margin * lev;
-  // Liquidation uses full account balance (margin + idle), not just margin
-  // Long liq: capital + posSize * pct = 0 → pct = -capital/posSize
-  // Short liq: capital - posSize * pct = 0 → pct = capital/posSize
-  const liqPct = capital / posSize;
-
-  const summary = document.getElementById('summary');
-  const totalCapital = capital * 2;
-  const fmtK = v => v >= 1000 ? '$' + (v/1000).toFixed(1) + 'k' : '$' + v.toFixed(0);
-
+  const coin = coinSel.value;
   const longExch = longExchSel.value;
   const shortExch = shortExchSel.value;
-  const coin = coinSel.value;
   const li = EXCHANGES.indexOf(longExch);
   const si = EXCHANGES.indexOf(shortExch);
   const longMax = LEV_DATA[coin][li];
   const shortMax = LEV_DATA[coin][si];
+  const lev = Math.min(longMax, shortMax);
+
+  const margin = capital * deployPct;
+  const posSize = margin * lev;
+  // Liquidation when equity drops to maintPct * margin
+  // Long: capital + posSize * pct = maintPct * margin → pct = (maintPct * margin - capital) / posSize
+  // Short: capital - posSize * pct = maintPct * margin → pct = (capital - maintPct * margin) / posSize
+  const maintReq = maintPct * margin;
+  const liqMoveLong = (maintReq - capital) / posSize;   // negative number
+  const liqMoveShort = (capital - maintReq) / posSize;  // positive number
+
+  const summary = document.getElementById('summary');
+  const totalCapital = capital * 2;
+  const fmtK = v => v >= 1000 ? '$' + (v/1000).toFixed(1) + 'k' : '$' + v.toFixed(0);
 
   summary.innerHTML = [
     ['Total Capital (2 exchanges)', fmtK(totalCapital)],
@@ -287,8 +276,9 @@ function compute() {
     ['Idle Capital (each exch)', fmtK(capital - margin)],
     ['Position Size (each leg)', fmtK(posSize)],
     [`Leverage (min of ${longExch} ${longMax}x, ${shortExch} ${shortMax}x)`, lev + 'x'],
-    ['Long Liq Price Move', '-' + (liqPct * 100).toFixed(1) + '%'],
-    ['Short Liq Price Move', '+' + (liqPct * 100).toFixed(1) + '%'],
+    ['Maint. Margin Req.', fmtK(maintReq)],
+    ['Long Liq Price Move', (liqMoveLong * 100).toFixed(1) + '%'],
+    ['Short Liq Price Move', '+' + (liqMoveShort * 100).toFixed(1) + '%'],
   ].map(([label, value]) =>
     `<div class="summary-card"><div class="label">${label}</div><div class="value">${value}</div></div>`
   ).join('');
@@ -310,13 +300,14 @@ function compute() {
     const longPnl = posSize * pct;
     const shortPnl = posSize * (-pct);
 
-    // Account equity = full capital + P&L (idle capital absorbs losses)
+    // Account equity = full capital + P&L
     const longEquity = capital + longPnl;
     const shortEquity = capital + shortPnl;
-    const longLiq = longEquity <= 0;
-    const shortLiq = shortEquity <= 0;
+    // Liquidated when equity drops to maintenance margin requirement
+    const longLiq = longEquity <= maintReq;
+    const shortLiq = shortEquity <= maintReq;
 
-    // If liquidated, loss is capped at full account balance
+    // If liquidated, lose everything above maint margin (approx full capital loss)
     const effLongPnl = longLiq ? -capital : longPnl;
     const effShortPnl = shortLiq ? -capital : shortPnl;
     const combined = effLongPnl + effShortPnl;
@@ -328,7 +319,7 @@ function compute() {
       const display = isLiq ? 'LIQ' : prefix + '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
       return `<td class="${cls}">${display}</td>`;
     }
-    function fmtMargin(v, isLiq) {
+    function fmtEq(v, isLiq) {
       if (isLiq) return '<td class="liq">$0</td>';
       return `<td>$${v.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>`;
     }
@@ -341,22 +332,21 @@ function compute() {
       fmt(effLongPnl, longLiq) +
       fmt(effShortPnl, shortLiq) +
       fmt(combined, false) +
-      fmtMargin(Math.max(0, longEquity), longLiq) +
-      fmtMargin(Math.max(0, shortEquity), shortLiq) +
+      fmtEq(Math.max(0, longEquity), longLiq) +
+      fmtEq(Math.max(0, shortEquity), shortLiq) +
       `<td class="${roiCls}">${roiPrefix}${roi.toFixed(1)}%</td>` +
       '</tr>';
   }).join('');
 }
 
 [coinSel, longExchSel, shortExchSel].forEach(el => {
-  el.addEventListener('change', () => { updateLevOptions(); compute(); });
+  el.addEventListener('change', compute);
 });
-[levSel, capitalIn, deployIn].forEach(el => {
+[capitalIn, deployIn, maintIn].forEach(el => {
   el.addEventListener('change', compute);
   el.addEventListener('input', compute);
 });
 
-updateLevOptions();
 compute();
 
 // ===================== PAGE 2: LEVERAGE TABLE =====================
