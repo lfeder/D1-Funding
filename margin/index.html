@@ -48,15 +48,9 @@
   tr:hover td { background: #d8e4f0; }
   tr:hover td.coin { background: #c8d8e8; }
 
-  /* PnL table */
-  #pnl-table td { min-width: 70px; }
-  #pnl-table td.move-col { text-align: left; font-weight: bold; background: #e8e8e4; position: sticky; left: 0; z-index: 1; }
   .pos { color: #1a7a2e; }
   .neg { color: #c33; }
   .liq { color: #fff; background: #c33 !important; font-weight: bold; }
-
-  /* Sections */
-  .section { margin-bottom: 24px; }
 
   /* Summary box */
   .summary {
@@ -72,11 +66,24 @@
   /* Leverage page */
   .lev-min { background: #fce4e4; }
   .lev-max { background: #d4f0d4; }
+
+  /* Assignment panels */
+  .assignment-panel {
+    flex: 1; min-width: 380px; background: #fff; border: 1px solid #ccc;
+    border-radius: 6px; padding: 12px 16px;
+  }
+  .assign-title { font-weight: bold; font-size: 12px; margin-bottom: 8px; }
+  .assign-table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+  .assign-table td { padding: 3px 6px; border: none; border-bottom: 1px solid #eee; font-size: 11px; text-align: left; }
+  .assign-table td:last-child { text-align: right; font-weight: bold; }
+  .scenario { padding: 8px; border-radius: 4px; background: #f8f8f5; border: 1px solid #e0e0d8; font-size: 11px; line-height: 1.6; }
+  .scenario-title { font-weight: bold; margin-bottom: 4px; }
+  .scenario-result { font-weight: bold; margin-top: 4px; font-size: 12px; }
 </style>
 </head>
 <body>
 
-<h2>Cross-Exchange Margin <span style="font-size:10px;color:#999;font-weight:normal">v 12-03 20:45</span></h2>
+<h2>Cross-Exchange Margin <span style="font-size:10px;color:#999;font-weight:normal">v 12-03 22:30</span></h2>
 <div class="tabs">
   <div class="tab active" data-page="page-sim">Margin Simulator</div>
   <div class="tab" data-page="page-lev">Leverage Table</div>
@@ -85,19 +92,19 @@
 
 <!-- PAGE 1: Margin Simulator -->
 <div class="page active" id="page-sim">
-  <p class="sub">Long perp on one exchange, short on another &mdash; leverage uses min(long exch, short exch) for both legs</p>
+  <p class="sub">Long perp on one exchange, short on another &mdash; dynamic margin, both assignments compared</p>
   <div class="controls">
     <div class="field">
       <label>Coin</label>
       <select id="coin"></select>
     </div>
     <div class="field">
-      <label>Long Exchange</label>
-      <select id="long-exch"></select>
+      <label>Exchange A</label>
+      <select id="exch-a"></select>
     </div>
     <div class="field">
-      <label>Short Exchange</label>
-      <select id="short-exch"></select>
+      <label>Exchange B</label>
+      <select id="exch-b"></select>
     </div>
     <div class="field">
       <label>Total Capital ($)</label>
@@ -113,24 +120,7 @@
     </div>
   </div>
 
-  <div class="summary" id="summary"></div>
-
-  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-    <div style="flex:1;min-width:500px">
-      <h3>P&L by Price Move</h3>
-      <p class="sub">Shows combined P&L across both legs as price moves. "Liq" = margin depleted on that leg.</p>
-      <div class="wrap">
-        <table id="pnl-table">
-          <thead id="pnl-head"></thead>
-          <tbody id="pnl-body"></tbody>
-        </table>
-      </div>
-    </div>
-    <div style="flex:0 0 680px">
-      <h3>How the margin math works</h3>
-      <div id="walkthrough" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:12px 16px;line-height:1.7;font-size:11px"></div>
-    </div>
-  </div>
+  <div id="results"></div>
 </div>
 
 <!-- PAGE 2: Leverage Table -->
@@ -238,171 +228,161 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // ===================== PAGE 1: MARGIN SIMULATOR =====================
 const coinSel = document.getElementById('coin');
-const longExchSel = document.getElementById('long-exch');
-const shortExchSel = document.getElementById('short-exch');
+const exchASel = document.getElementById('exch-a');
+const exchBSel = document.getElementById('exch-b');
 const capitalIn = document.getElementById('capital');
 const deployIn = document.getElementById('deploy');
 const maintIn = document.getElementById('maint');
 
 COINS.forEach(c => coinSel.add(new Option(c, c)));
 EXCHANGES.forEach(e => {
-  longExchSel.add(new Option(`${e} (${EXCH_NAMES[e]})`, e));
-  shortExchSel.add(new Option(`${e} (${EXCH_NAMES[e]})`, e));
+  exchASel.add(new Option(`${e} (${EXCH_NAMES[e]})`, e));
+  exchBSel.add(new Option(`${e} (${EXCH_NAMES[e]})`, e));
 });
-longExchSel.value = 'HL';
-shortExchSel.value = 'BN';
+exchASel.value = 'HL';
+exchBSel.value = 'BN';
 
 function compute() {
   const totalCapital = parseFloat(capitalIn.value) || 20000;
-  const deployPct = (parseFloat(deployIn.value) || 50) / 100;
-  const maintPct = (parseFloat(maintIn.value) || 30) / 100;
+  const deployPct = (parseFloat(deployIn.value) || 10) / 100;
+  const maintPct = (parseFloat(maintIn.value) || 50) / 100;
 
   const coin = coinSel.value;
-  const longExch = longExchSel.value;
-  const shortExch = shortExchSel.value;
-  const li = EXCHANGES.indexOf(longExch);
-  const si = EXCHANGES.indexOf(shortExch);
-  const longLev = LEV_DATA[coin][li];
-  const shortLev = LEV_DATA[coin][si];
+  const exchA = exchASel.value;
+  const exchB = exchBSel.value;
+  const levA = LEV_DATA[coin][EXCHANGES.indexOf(exchA)];
+  const levB = LEV_DATA[coin][EXCHANGES.indexOf(exchB)];
 
-  // Equal position size on both legs:
-  // Total margin = totalCapital * deployPct, split so M_L * L_L = M_S * L_S = P
-  // P = totalCapital * deployPct * L_L * L_S / (L_L + L_S)
   const totalMargin = totalCapital * deployPct;
-  const posSize = totalMargin * longLev * shortLev / (longLev + shortLev);
-  const longMargin = posSize / longLev;
-  const shortMargin = posSize / shortLev;
+  const posSize = totalMargin * levA * levB / (levA + levB);
 
-  // Split capital to equalize liquidation move on both sides.
-  // Want: (C_L - m*M_L) / P = (C_S - m*M_S) / P
-  // Solution: C_L = (totalCapital + m*(M_L - M_S)) / 2
-  // This puts more capital on the side with more margin (lower leverage).
-  const longCapital = (totalCapital + maintPct * (longMargin - shortMargin)) / 2;
-  const shortCapital = totalCapital - longCapital;
+  // Solve one assignment: find capital split that equalizes liq distance
+  // under dynamic margin (maint req = maintPct * qty * currentPrice / leverage).
+  //
+  // Long liq (price drops by d): C_L + P*(-d) = maintPct * P*(1-d) / L_long
+  // Short liq (price rises by u): C_S + P*(-u) = maintPct * P*(1+u) / L_short
+  // Set d = u, solve for C_L with C_L + C_S = T:
+  //   C_L = P * (t(1-a) + a - b + 2ab) / (2 + b - a)
+  //   where a = maintPct/L_long, b = maintPct/L_short, t = T/P
+  function solve(longExch, shortExch, lLev, sLev) {
+    const lMargin = posSize / lLev;
+    const sMargin = posSize / sLev;
+    const a = maintPct / lLev;
+    const b = maintPct / sLev;
+    const t = totalCapital / posSize;
+    const x = (t * (1 - a) + a - b + 2*a*b) / (2 + b - a);
+    const lCap = posSize * x;
+    const sCap = totalCapital - lCap;
+    const liq = (x - a) / (1 - a);
+    const gain = posSize * liq;
+    return {
+      longExch, shortExch, lLev, sLev,
+      lCap, sCap, lMargin, sMargin, liq, gain,
+      pnlDown: gain - lCap,   // price drops, long liq'd
+      pnlUp: gain - sCap      // price rises, short liq'd
+    };
+  }
 
-  // Liquidation: equity drops to maint margin requirement
-  // Both sides have the same liq move = totalCapital*(1 - m*d) / (2*P)
-  const liqMove = (totalCapital * (1 - maintPct * deployPct)) / (2 * posSize);
+  const a1 = solve(exchA, exchB, levA, levB);
+  const a2 = solve(exchB, exchA, levB, levA);
+  const sameLev = levA === levB;
+  const better = sameLev ? 0 : (a1.liq >= a2.liq ? 1 : 2);
 
-  const summary = document.getElementById('summary');
-  const fmtK = v => v >= 1000 ? '$' + (v/1000).toFixed(1) + 'k' : '$' + v.toFixed(0);
-
-  summary.innerHTML = [
-    [`${longExch} Capital (long)`, fmtK(longCapital)],
-    [`${shortExch} Capital (short)`, fmtK(shortCapital)],
-    [`${longExch} Margin (${longLev}x)`, fmtK(longMargin)],
-    [`${shortExch} Margin (${shortLev}x)`, fmtK(shortMargin)],
-    ['Position Size', fmtK(posSize)],
-    ['Liq Price Move (either side)', '±' + (liqMove * 100).toFixed(1) + '%'],
-  ].map(([label, value]) =>
-    `<div class="summary-card"><div class="label">${label}</div><div class="value">${value}</div></div>`
-  ).join('');
-
-  // Price moves: -80% to +500%
-  const moves = [];
-  for (let m = -80; m <= 500; m += 5) moves.push(m);
-
-  const phead = document.getElementById('pnl-head');
-  const pbody = document.getElementById('pnl-body');
-  phead.innerHTML = '<tr>' +
-    '<th style="position:sticky;left:0;z-index:3">Price Δ</th>' +
-    `<th>${longExch} Long P&L</th><th>${shortExch} Short P&L</th><th>Combined</th>` +
-    `<th>${longExch} Equity</th><th>${shortExch} Equity</th>` +
-    '<th>ROI</th></tr>';
-
-  pbody.innerHTML = moves.map(m => {
-    const pct = m / 100;
-    const longPnl = posSize * pct;
-    const shortPnl = posSize * (-pct);
-
-    const longEquity = longCapital + longPnl;
-    const shortEquity = shortCapital + shortPnl;
-    const longMaintReq = maintPct * longMargin;
-    const shortMaintReq = maintPct * shortMargin;
-    const longLiq = longEquity <= longMaintReq;
-    const shortLiq = shortEquity <= shortMaintReq;
-
-    const effLongPnl = longLiq ? -longCapital : longPnl;
-    const effShortPnl = shortLiq ? -shortCapital : shortPnl;
-    const combined = effLongPnl + effShortPnl;
-    const roi = combined / totalCapital * 100;
-
-    function fmt(v, isLiq) {
-      const cls = isLiq ? 'liq' : (v >= 0 ? 'pos' : 'neg');
-      const prefix = v >= 0 ? '+$' : '-$';
-      const display = isLiq ? 'LIQ' : prefix + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
-      return `<td class="${cls}">${display}</td>`;
-    }
-    function fmtEq(v, isLiq) {
-      if (isLiq) return '<td class="liq">$0</td>';
-      return `<td>$${v.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>`;
-    }
-
-    const roiCls = roi >= 0 ? 'pos' : 'neg';
-    const roiPrefix = roi >= 0 ? '+' : '';
-    const highlight = m === 0 ? ' style="background:#e8e8e4"' : '';
-    return `<tr${highlight}>` +
-      `<td class="move-col">${m >= 0 ? '+' : ''}${m}%</td>` +
-      fmt(effLongPnl, longLiq) +
-      fmt(effShortPnl, shortLiq) +
-      fmt(combined, false) +
-      fmtEq(Math.max(0, longEquity), longLiq) +
-      fmtEq(Math.max(0, shortEquity), shortLiq) +
-      `<td class="${roiCls}">${roiPrefix}${roi.toFixed(1)}%</td>` +
-      '</tr>';
-  }).join('');
-
-  // --- Walkthrough ---
-  const $ = v => '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
-  const $d = v => '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+  const fK = v => v >= 1000 ? '$' + (v/1000).toFixed(1) + 'k' : '$' + v.toFixed(0);
   const pct = v => (v * 100).toFixed(1) + '%';
+  const fPnl = v => {
+    const cls = v >= 0 ? 'pos' : 'neg';
+    const s = v >= 0 ? '+' : '\u2212';
+    return '<span class="' + cls + '">' + s + fK(Math.abs(v)) + '</span>';
+  };
+  const fRoi = v => {
+    const r = v / totalCapital * 100;
+    return (r >= 0 ? '+' : '') + r.toFixed(1) + '%';
+  };
 
-  // Pick a sample big move for the example (use the liq move rounded down to nearest 5%)
-  const sampleMove = Math.floor(liqMove * 100 / 5) * 5 || 5;
-  const samplePct = sampleMove / 100;
-  const sampleLongPnl = posSize * samplePct;
-  const sampleShortPnl = posSize * (-samplePct);
-  const sampleLongEq = longCapital + sampleLongPnl;
-  const sampleShortEq = shortCapital + sampleShortPnl;
+  function panel(a, isBetter) {
+    const border = isBetter ? 'border-left:3px solid #1a7a2e;' : '';
+    const tag = isBetter ? ' <span class="pos" style="font-size:10px">\u2605 wider liq range</span>' : '';
+    const survDown = a.sCap + a.gain;
+    const survUp = a.lCap + a.gain;
+    const worstPnl = Math.min(a.pnlDown, a.pnlUp);
 
-  document.getElementById('walkthrough').innerHTML = `
-<b>1. Capital &amp; deployment</b><br>
-Total capital: ${$(totalCapital)}. Deploy ${(deployPct*100).toFixed(0)}% = ${$(totalMargin)} total margin across both exchanges.<br>
-Idle capital (buffer): ${$(totalCapital - totalMargin)} total (split between exchanges).<br><br>
+    return '\
+    <div class="assignment-panel" style="' + border + '">\
+      <div class="assign-title">Long ' + a.longExch + ' (' + a.lLev + 'x) / Short ' + a.shortExch + ' (' + a.sLev + 'x)' + tag + '</div>\
+      <table class="assign-table">\
+        <tr><td>' + a.longExch + ' capital (long)</td><td>' + fK(a.lCap) + '</td></tr>\
+        <tr><td>' + a.shortExch + ' capital (short)</td><td>' + fK(a.sCap) + '</td></tr>\
+        <tr><td>' + a.longExch + ' margin (' + a.lLev + 'x)</td><td>' + fK(a.lMargin) + '</td></tr>\
+        <tr><td>' + a.shortExch + ' margin (' + a.sLev + 'x)</td><td>' + fK(a.sMargin) + '</td></tr>\
+        <tr><td>' + a.longExch + ' cushion</td><td>' + fK(a.lCap - a.lMargin) + '</td></tr>\
+        <tr><td>' + a.shortExch + ' cushion</td><td>' + fK(a.sCap - a.sMargin) + '</td></tr>\
+        <tr><td><b>Liq move (equalized)</b></td><td><b>\u00b1' + pct(a.liq) + '</b></td></tr>\
+        <tr><td>Worst-case loss at liq</td><td>' + fPnl(worstPnl) + ' (' + fRoi(worstPnl) + ')</td></tr>\
+      </table>\
+      <div class="scenario">\
+        <div class="scenario-title">\u25bc Price drops ' + pct(a.liq) + ' \u2014 ' + a.longExch + ' (long) liquidated</div>\
+        ' + a.longExch + ': lose ' + fK(a.lCap) + '<br>\
+        ' + a.shortExch + ': ' + fK(a.sCap) + ' + ' + fK(a.gain) + ' gain = ' + fK(survDown) + ' equity<br>\
+        <div class="scenario-result">Net: ' + fPnl(a.pnlDown) + ' (' + fRoi(a.pnlDown) + ' ROI)</div>\
+      </div>\
+      <div class="scenario" style="margin-top:6px">\
+        <div class="scenario-title">\u25b2 Price rises ' + pct(a.liq) + ' \u2014 ' + a.shortExch + ' (short) liquidated</div>\
+        ' + a.shortExch + ': lose ' + fK(a.sCap) + '<br>\
+        ' + a.longExch + ': ' + fK(a.lCap) + ' + ' + fK(a.gain) + ' gain = ' + fK(survUp) + ' equity<br>\
+        <div class="scenario-result">Net: ' + fPnl(a.pnlUp) + ' (' + fRoi(a.pnlUp) + ' ROI)</div>\
+      </div>\
+    </div>';
+  }
 
-<b>2. Position sizing</b><br>
-${longExch} leverage: ${longLev}x. ${shortExch} leverage: ${shortLev}x.<br>
-To get equal position sizes: P = ${$(totalMargin)} &times; ${longLev} &times; ${shortLev} / (${longLev} + ${shortLev}) = <b>${$(posSize)}</b> per leg.<br>
-${longExch} margin: ${$(posSize)} / ${longLev} = ${$(longMargin)}.<br>
-${shortExch} margin: ${$(posSize)} / ${shortLev} = ${$(shortMargin)}.<br><br>
+  // Walkthrough
+  const rec = better === 1 ? a1 : (better === 2 ? a2 : a1);
+  const other = better === 1 ? a2 : (better === 2 ? a1 : a2);
+  const $ = v => '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0});
 
-<b>3. Capital split (equalize liquidation)</b><br>
-We shift capital so both sides have the same equity cushion above maintenance margin.<br>
-${longExch} capital: (${$(totalCapital)} + ${(maintPct*100).toFixed(0)}% &times; (${$(longMargin)} &minus; ${$(shortMargin)})) / 2 = <b>${$(longCapital)}</b><br>
-${shortExch} capital: ${$(totalCapital)} &minus; ${$(longCapital)} = <b>${$(shortCapital)}</b><br>
-${longLev < shortLev ? longExch + ' gets more capital because it uses more margin (lower leverage).' :
-  shortLev < longLev ? shortExch + ' gets more capital because it uses more margin (lower leverage).' :
-  'Equal leverage, so capital splits evenly.'}<br><br>
+  const walkHTML = '\
+<b>1. Position sizing</b><br>\
+Total margin: ' + $(totalMargin) + '. ' + exchA + ': ' + levA + 'x, ' + exchB + ': ' + levB + 'x.<br>\
+Position = ' + $(totalMargin) + ' \u00d7 ' + levA + ' \u00d7 ' + levB + ' / (' + levA + ' + ' + levB + ') = <b>' + $(posSize) + '</b> per leg.<br><br>\
+\
+<b>2. Dynamic margin</b><br>\
+Maintenance requirement = maint% \u00d7 qty \u00d7 <i>current price</i> / leverage.<br>\
+As price moves, position value changes \u2192 margin requirement changes:<br>\
+\u2022 <b>Short losing</b> (price \u2191): margin req <i>increases</i> \u2014 double whammy.<br>\
+\u2022 <b>Long losing</b> (price \u2193): margin req <i>decreases</i> \u2014 partial offset.<br><br>\
+\
+<b>3. Capital allocation</b><br>\
+Solve for split where both sides hit maintenance at the same % move:<br>\
+C<sub>long</sub> = P \u00d7 (t(1\u2212a) + a \u2212 b + 2ab) / (2 + b \u2212 a)<br>\
+where a = maint%/L<sub>long</sub>, b = maint%/L<sub>short</sub>, t = total_capital/position.<br>\
+The short side gets more capital to compensate for its growing margin requirement.<br><br>\
+\
+<b>4. Why assignment matters</b><br>' +
+  (sameLev
+    ? 'Equal leverage (' + levA + 'x) \u2014 both assignments are identical.'
+    : 'Short on higher-leverage exchange (' + rec.shortExch + ' ' + rec.sLev + 'x) is better:<br>\
+\u2022 Wider liq range: \u00b1' + pct(rec.liq) + ' vs \u00b1' + pct(other.liq) + '<br>\
+\u2022 Smaller worst-case loss: ' + fPnl(Math.min(rec.pnlDown, rec.pnlUp)) + ' vs ' + fPnl(Math.min(other.pnlDown, other.pnlUp)) + '<br>\
+The growing margin requirement is smaller at higher leverage (maint%/' + rec.sLev + ' = ' + (maintPct/rec.sLev*100).toFixed(2) + '% vs maint%/' + other.sLev + ' = ' + (maintPct/other.sLev*100).toFixed(2) + '%).');
 
-<b>4. Example: price moves +${sampleMove}%</b><br>
-Long leg (${longExch}): ${$(posSize)} &times; +${sampleMove}% = <b>+${$(sampleLongPnl)}</b> P&amp;L. Account equity: ${$(longCapital)} + ${$(sampleLongPnl)} = ${$(sampleLongEq)}.<br>
-Short leg (${shortExch}): ${$(posSize)} &times; &minus;${sampleMove}% = <b>&minus;${$(Math.abs(sampleShortPnl))}</b> P&amp;L. Account equity: ${$(shortCapital)} &minus; ${$(Math.abs(sampleShortPnl))} = ${$(sampleShortEq)}.<br>
-Net P&amp;L: +${$(sampleLongPnl)} &minus; ${$(Math.abs(sampleShortPnl))} = <b>${$(sampleLongPnl + sampleShortPnl)}</b> (zero for equal-sized positions).<br><br>
-
-<b>5. Liquidation threshold</b><br>
-Maintenance margin = ${(maintPct*100).toFixed(0)}% of deployed margin.<br>
-${longExch}: ${(maintPct*100).toFixed(0)}% &times; ${$(longMargin)} = ${$(maintPct * longMargin)}. Liquidation when equity &le; ${$(maintPct * longMargin)}.<br>
-${shortExch}: ${(maintPct*100).toFixed(0)}% &times; ${$(shortMargin)} = ${$(maintPct * shortMargin)}. Liquidation when equity &le; ${$(maintPct * shortMargin)}.<br>
-Both sides liquidate at the same price move: <b>&plusmn;${pct(liqMove)}</b>.<br><br>
-<b>At liquidation (e.g. price moves +${pct(liqMove)}):</b><br>
-Short leg (${shortExch}) is liquidated &mdash; you lose all ${$(shortCapital)} capital on that exchange.<br>
-Long leg (${longExch}) gains: ${$(posSize)} &times; ${pct(liqMove)} = +${$(posSize * liqMove)}.<br>
-${longExch} equity: ${$(longCapital)} + ${$(posSize * liqMove)} = ${$(longCapital + posSize * liqMove)}.<br>
-Net: +${$(posSize * liqMove)} &minus; ${$(shortCapital)} = <b>${$(posSize * liqMove - shortCapital)}</b>.
-`;
+  document.getElementById('results').innerHTML = '\
+    <div class="summary">\
+      <div class="summary-card"><div class="label">Position Size (each leg)</div><div class="value">' + fK(posSize) + '</div></div>\
+      <div class="summary-card"><div class="label">Total Margin Deployed</div><div class="value">' + fK(totalMargin) + '</div></div>\
+      <div class="summary-card"><div class="label">' + exchA + ' Leverage</div><div class="value">' + levA + 'x</div></div>\
+      <div class="summary-card"><div class="label">' + exchB + ' Leverage</div><div class="value">' + levB + 'x</div></div>\
+    </div>\
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">\
+      ' + panel(a1, better === 1) + '\
+      ' + panel(a2, better === 2) + '\
+    </div>\
+    <div style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:12px 16px;line-height:1.7;font-size:11px">\
+      <h3 style="margin:0 0 8px">How the margin math works</h3>\
+      ' + walkHTML + '\
+    </div>';
 }
 
-[coinSel, longExchSel, shortExchSel].forEach(el => {
+[coinSel, exchASel, exchBSel].forEach(el => {
   el.addEventListener('change', compute);
 });
 [capitalIn, deployIn, maintIn].forEach(el => {
@@ -428,7 +408,7 @@ function buildLevTable() {
     });
   }
 
-  const arrow = k => levSortKey === k ? (levSortAsc ? ' ▲' : ' ▼') : '';
+  const arrow = k => levSortKey === k ? (levSortAsc ? ' \u25b2' : ' \u25bc') : '';
   const head = document.getElementById('lev-head');
   const body = document.getElementById('lev-body');
   head.innerHTML = '<tr>' +
@@ -484,7 +464,7 @@ function buildMovesTable() {
     });
   }
 
-  const arrow = k => movesSortKey === k ? (movesSortAsc ? ' ▲' : ' ▼') : '';
+  const arrow = k => movesSortKey === k ? (movesSortAsc ? ' \u25b2' : ' \u25bc') : '';
   const head = document.getElementById('moves-head');
   const body = document.getElementById('moves-body');
   head.innerHTML = '<tr>' +
