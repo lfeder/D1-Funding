@@ -256,33 +256,28 @@ function compute() {
   const si = EXCHANGES.indexOf(shortExch);
   const longLev = LEV_DATA[coin][li];
   const shortLev = LEV_DATA[coin][si];
-  const minLev = Math.min(longLev, shortLev);
-  const maxLev = Math.max(longLev, shortLev);
 
-  // Split capital proportionally: lower-leverage side needs more margin
-  // Both legs have the same position size
-  // longMargin * longLev = shortMargin * shortLev = posSize
-  // longCapital + shortCapital = totalCapital
-  // longCapital / shortCapital = longMargin / shortMargin = shortLev / longLev
-  // (higher lev → less capital needed)
-  const longCapital = totalCapital * shortLev / (longLev + shortLev);
-  const shortCapital = totalCapital * longLev / (longLev + shortLev);
+  // Equal position size on both legs:
+  // Total margin = totalCapital * deployPct, split so M_L * L_L = M_S * L_S = P
+  // P = totalCapital * deployPct * L_L * L_S / (L_L + L_S)
+  const totalMargin = totalCapital * deployPct;
+  const posSize = totalMargin * longLev * shortLev / (longLev + shortLev);
+  const longMargin = posSize / longLev;
+  const shortMargin = posSize / shortLev;
 
-  const longMargin = longCapital * deployPct;
-  const shortMargin = shortCapital * deployPct;
-  const posSize = longMargin * longLev;  // = shortMargin * shortLev
+  // Split capital to equalize liquidation move on both sides.
+  // Want: (C_L - m*M_L) / P = (C_S - m*M_S) / P
+  // Solution: C_L = (totalCapital + m*(M_L - M_S)) / 2
+  // This puts more capital on the side with more margin (lower leverage).
+  const longCapital = (totalCapital + maintPct * (longMargin - shortMargin)) / 2;
+  const shortCapital = totalCapital - longCapital;
 
-  // Maintenance margin on deployed margin
-  const longMaintReq = maintPct * longMargin;
-  const shortMaintReq = maintPct * shortMargin;
-  // Liq: equity = capital + pnl <= maintReq
-  const liqMoveLong = (longMaintReq - longCapital) / posSize;
-  const liqMoveShort = (shortCapital - shortMaintReq) / posSize;
+  // Liquidation: equity drops to maint margin requirement
+  // Both sides have the same liq move = totalCapital*(1 - m*d) / (2*P)
+  const liqMove = (totalCapital * (1 - maintPct * deployPct)) / (2 * posSize);
 
   const summary = document.getElementById('summary');
   const fmtK = v => v >= 1000 ? '$' + (v/1000).toFixed(1) + 'k' : '$' + v.toFixed(0);
-  const longExchLabel = longLev <= shortLev ? `<b>${longExch} ${longLev}x</b>` : `${longExch} ${longLev}x`;
-  const shortExchLabel = shortLev <= longLev ? `<b>${shortExch} ${shortLev}x</b>` : `${shortExch} ${shortLev}x`;
 
   summary.innerHTML = [
     [`${longExch} Capital (long)`, fmtK(longCapital)],
@@ -290,8 +285,7 @@ function compute() {
     [`${longExch} Margin (${longLev}x)`, fmtK(longMargin)],
     [`${shortExch} Margin (${shortLev}x)`, fmtK(shortMargin)],
     ['Position Size', fmtK(posSize)],
-    ['Long Liq Price Move', (liqMoveLong * 100).toFixed(1) + '%'],
-    ['Short Liq Price Move', '+' + (liqMoveShort * 100).toFixed(1) + '%'],
+    ['Liq Price Move (either side)', '±' + (liqMove * 100).toFixed(1) + '%'],
   ].map(([label, value]) =>
     `<div class="summary-card"><div class="label">${label}</div><div class="value">${value}</div></div>`
   ).join('');
@@ -315,6 +309,8 @@ function compute() {
 
     const longEquity = longCapital + longPnl;
     const shortEquity = shortCapital + shortPnl;
+    const longMaintReq = maintPct * longMargin;
+    const shortMaintReq = maintPct * shortMargin;
     const longLiq = longEquity <= longMaintReq;
     const shortLiq = shortEquity <= shortMaintReq;
 
