@@ -115,17 +115,22 @@
 
   <div class="summary" id="summary"></div>
 
-  <h3>P&L by Price Move</h3>
-  <p class="sub">Shows combined P&L across both legs as price moves. "Liq" = margin depleted on that leg.</p>
-  <div class="wrap">
-    <table id="pnl-table">
-      <thead id="pnl-head"></thead>
-      <tbody id="pnl-body"></tbody>
-    </table>
+  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:1;min-width:500px">
+      <h3>P&L by Price Move</h3>
+      <p class="sub">Shows combined P&L across both legs as price moves. "Liq" = margin depleted on that leg.</p>
+      <div class="wrap">
+        <table id="pnl-table">
+          <thead id="pnl-head"></thead>
+          <tbody id="pnl-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div style="flex:0 0 340px">
+      <h3>How the margin math works</h3>
+      <div id="walkthrough" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:12px 16px;line-height:1.7;font-size:11px"></div>
+    </div>
   </div>
-
-  <h3>How the margin math works</h3>
-  <div id="walkthrough" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:12px 16px;line-height:1.7;font-size:11px;max-width:720px"></div>
 </div>
 
 <!-- PAGE 2: Leverage Table -->
