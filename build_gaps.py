@@ -9,7 +9,7 @@ import os
 import pandas as pd
 
 BASE = os.path.dirname(__file__)
-PARQUET = os.path.join(BASE, "raw", "l2_orderbook_1min_0303.parquet")
+PARQUET = os.path.join(BASE, "raw", "l2_orderbook_1min_0323.parquet")
 OUT = os.path.join(BASE, "gaps", "gaps.json")
 
 EXCH_MAP = {
@@ -29,6 +29,7 @@ df = pd.read_parquet(PARQUET, columns=["exchange", "symbol", "minute_utc"])
 print(f"  {len(df):,} rows")
 
 df["exchange"] = df["exchange"].map(EXCH_MAP)
+df = df.dropna(subset=["exchange"])
 df["coin"] = df["symbol"]  # already normalized in L2 data
 df["minute_utc"] = pd.to_datetime(df["minute_utc"])
 
