@@ -58,7 +58,7 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 </head>
 <body>
 
-<div style="font-size:10px;font-family:monospace;color:#222;margin-bottom:4px">v: 03-24 07:55pm</div>
+<div style="font-size:10px;font-family:monospace;color:#222;margin-bottom:4px">v: 03-24 07:51</div>
 <h2>Daily Volume Viewer</h2>
 <p class="sub">Daily perpetual-swap volume (quote USD) by exchange &amp; coin &nbsp;|&nbsp; Mar 2025 – Mar 2026</p>
 
@@ -223,9 +223,11 @@ function render() {
   document.getElementById('status').textContent = `${rows.length} coins · ${mode}`;
 
   // Max log for exchange and coin scales
-  const exchMax = Math.max(...exchanges.flatMap(ex => exchDaily[ex]).filter(v => v > 0), 1);
+  let exchMax = 1;
+  for (const ex of exchanges) for (const v of exchDaily[ex]) if (v > exchMax) exchMax = v;
   const maxLogExch = Math.log10(exchMax + 1);
-  const coinMax = Math.max(...rows.flatMap(r => r.vols).filter(v => v > 0), 1);
+  let coinMax = 1;
+  for (const r of rows) for (const v of r.vols) if (v > coinMax) coinMax = v;
   const maxLogCoin = Math.log10(coinMax + 1);
 
   // Date ticks
