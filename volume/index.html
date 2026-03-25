@@ -60,7 +60,7 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
 <h2 style="font-size:14px">Daily Volume Viewer</h2>
-<div style="font-size:10px;font-family:monospace;color:#222">v: 03-24 20:24</div>
+<div style="font-size:10px;font-family:monospace;color:#222">v: 03-24 20:29</div>
 </div>
 <p class="sub">Daily perpetual-swap volume (quote USD) by exchange &amp; coin &nbsp;|&nbsp; Mar 2025 – Mar 2026</p>
 
@@ -129,12 +129,20 @@ function fmtFull(v) {
   return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
-// Fixed threshold color: returns [r,g,b]
+// Coin-level thresholds: returns [r,g,b]
 function volRgb(v) {
   if (!v) return null;
   if (v >= 1e8) return [26, 122, 26];
   if (v >= 1e7) return [124, 196, 124];
   if (v >= 1e6) return [220, 200, 80];
+  return [200, 100, 100];
+}
+// Summary-level thresholds (billions): returns [r,g,b]
+function sumRgb(v) {
+  if (!v) return null;
+  if (v >= 25e9) return [26, 122, 26];
+  if (v >= 5e9) return [124, 196, 124];
+  if (v >= 1e9) return [220, 200, 80];
   return [200, 100, 100];
 }
 
@@ -162,14 +170,15 @@ function avgSlice(vols, start, end) {
   return count ? sum / count : 0;
 }
 
-function paintBar(canvas, vols, start, end) {
+function paintBar(canvas, vols, start, end, colorFn) {
+  const fn = colorFn || volRgb;
   const len = end - start;
   canvas.width = len;
   canvas.height = 1;
   const ctx = canvas.getContext('2d');
   const img = ctx.createImageData(len, 1);
   for (let i = 0; i < len; i++) {
-    const rgb = volRgb(vols[start + i]);
+    const rgb = fn(vols[start + i]);
     const off = i * 4;
     if (rgb) {
       img.data[off] = rgb[0]; img.data[off+1] = rgb[1]; img.data[off+2] = rgb[2]; img.data[off+3] = 255;
@@ -289,7 +298,7 @@ function render() {
     row.className = 'vol-row exch-summary';
     row.innerHTML = `<div class="col-exch">${sr.label}</div><div class="col-sym"></div><div class="col-avg" title="${fmtFull(avg)}/day">${fmtVol(avg)}</div><div class="col-bar"><canvas style="image-rendering:pixelated"></canvas></div>`;
     container.appendChild(row);
-    paintBar(row.querySelector('canvas'), sr.vols, start, end);
+    paintBar(row.querySelector('canvas'), sr.vols, start, end, sumRgb);
     const barDiv = row.querySelector('.col-bar');
     barDiv.addEventListener('mousemove', e => barMove(e, visibleDates, sr.vols, start));
     barDiv.addEventListener('mouseleave', barLeave);
