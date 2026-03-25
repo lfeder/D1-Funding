@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Volume Viewer</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #f5f5f0; color: #222; font-family: monospace; font-size: 11px; padding: 16px; }
+h2 { font-size: 14px; margin-bottom: 4px; }
+p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.toolbar button {
+  padding: 3px 10px; font-size: 10px; font-family: monospace; cursor: pointer;
+  border: 1px solid #bbb; border-radius: 3px; background: #fff; color: #444;
+}
+.toolbar button.active { background: #3a6ea8; color: #fff; border-color: #3a6ea8; }
+.toolbar button:hover { border-color: #888; }
+.toolbar .sep { width: 1px; height: 18px; background: #ccc; margin: 0 4px; }
+
+.legend { display: flex; gap: 12px; margin-bottom: 10px; font-size: 10px; color: #666; align-items: center; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-swatch { width: 14px; height: 12px; border-radius: 2px; border: 1px solid #ccc; }
+
+/* Table layout */
+.vol-wrap { overflow-x: auto; max-height: calc(100vh - 140px); position: relative; }
+table.vol { border-collapse: separate; border-spacing: 0; font-size: 10px; }
+table.vol th, table.vol td { padding: 2px 4px; white-space: nowrap; border-right: 1px solid #e0e0d8; border-bottom: 1px solid #e0e0d8; }
+table.vol thead th { position: sticky; top: 0; z-index: 10; background: #e8e8e2; font-weight: bold; font-size: 9px; color: #444; }
+table.vol .pin { position: sticky; left: 0; z-index: 5; background: inherit; }
+table.vol thead .pin { z-index: 15; }
+table.vol .pin-exch { position: sticky; left: 0; z-index: 5; background: inherit; min-width: 60px; }
+table.vol .pin-sym { position: sticky; left: 60px; z-index: 5; background: inherit; min-width: 60px; }
+table.vol thead .pin-exch { z-index: 15; }
+table.vol thead .pin-sym { z-index: 15; }
+
+/* Section headers */
+tr.exch-summary td, tr.exch-summary th { background: #e0e0d8; font-weight: bold; font-size: 11px; }
+tr.exch-summary td { cursor: pointer; }
+tr.exch-summary:hover td { background: #d4d4cc; }
+tr.section-hdr td { background: #d8dce4; font-weight: bold; font-size: 10px; text-align: center; padding: 4px; }
+
+/* Volume cells */
+.vc { text-align: right; font-size: 9px; min-width: 44px; cursor: default; }
+.vc-zero { color: #ccc; }
+
+/* Coin rows */
+tr.coin-row { background: #fafaf5; }
+tr.coin-row:nth-child(even) { background: #f5f5f0; }
+tr.coin-row:hover td { background: #eeeee8 !important; }
+tr.coin-row .sym { font-weight: bold; }
+
+#loading { text-align: center; padding: 40px; color: #888; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div style="font-size:10px;font-family:monospace;color:#222;margin-bottom:4px">v: 03-24 01:00pm</div>
+<h2>Daily Volume Viewer</h2>
+<p class="sub">Daily perpetual-swap volume (quote USD) by exchange &amp; coin &nbsp;|&nbsp; Mar 2025 – Mar 2026</p>
+
+<div class="toolbar">
+  <span style="font-size:10px;color:#666;margin-right:2px">Rank:</span>
+  <button class="rank-btn active" data-rank="all" onclick="setRank('all')">All</button>
+  <button class="rank-btn" data-rank="1" onclick="setRank('1')">#1</button>
+  <button class="rank-btn" data-rank="2" onclick="setRank('2')">#2</button>
+  <button class="rank-btn" data-rank="3" onclick="setRank('3')">#3</button>
+  <button class="rank-btn" data-rank="4" onclick="setRank('4')">#4</button>
+  <button class="rank-btn" data-rank="5" onclick="setRank('5')">#5</button>
+  <button class="rank-btn" data-rank="6" onclick="setRank('6')">#6</button>
+  <div class="sep"></div>
+  <button id="btn-multi" class="active" onclick="toggleMulti()">2+ exchanges only</button>
+  <div class="sep"></div>
+  <span id="coin-count" style="font-size:10px;color:#666"></span>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#f5f5f0"></div> No data</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#e8f0e4"></div> Low</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#7bc47b"></div> Mid</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#1a7a1a"></div> High</div>
+</div>
+
+<div id="loading">Loading volume.json…</div>
+<div class="vol-wrap" id="volWrap" style="display:none">
+  <table class="vol" id="volTable"></table>
+</div>
+
+<script>
+let DATA = null;
+let rankFilter = 'all';
+let multiExchOnly = true;
+
+// ── Formatting helpers ──
+function fmtVol(v) {
+  if (!v) return '';
+  if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(0) + 'K';
+  return v.toFixed(0);
+}
+
+function fmtVolFull(v) {
+  if (!v) return '$0';
+  return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+// ── Color scale (log-based green) ──
+function volColor(v, maxLog) {
+  if (!v) return '';
+  const ratio = Math.log10(v + 1) / maxLog;
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const r = Math.round(245 - clamped * 219);
+  const g = Math.round(245 - clamped * 123);
+  const b = Math.round(240 - clamped * 214);
+  return `rgb(${r},${g},${b})`;
+}
+
+const EXCH_ABBR = { binance: 'BN', bybit: 'BB', okx: 'OKX', hyperliquid: 'HL', aster: 'AS', lighter: 'LT' };
+
+function setRank(r) {
+  rankFilter = r;
+  document.querySelectorAll('.rank-btn').forEach(b => b.classList.toggle('active', b.dataset.rank === r));
+  render();
+}
+
+function toggleMulti() {
+  multiExchOnly = !multiExchOnly;
+  document.getElementById('btn-multi').classList.toggle('active', multiExchOnly);
+  render();
+}
+
+// ── Compute per-coin exchange rankings (by total vol) ──
+function coinRankings(coin) {
+  const ranks = [];
+  for (const ex of Object.keys(coin.e)) {
+    const total = coin.e[ex].reduce((a, b) => a + b, 0);
+    ranks.push({ ex, total });
+  }
+  ranks.sort((a, b) => b.total - a.total);
+  return ranks;
+}
+
+// ── Date label: show every ~14 days ──
+function dateTicks(dates) {
+  const step = Math.max(1, Math.floor(dates.length / 26));
+  const ticks = [];
+  for (let i = 0; i < dates.length; i += step) {
+    ticks.push(i);
+  }
+  return ticks;
+}
+
+function render() {
+  if (!DATA) return;
+  const { dates, exchanges, exchDaily, coins } = DATA;
+  const n = dates.length;
+
+  // Filter coins
+  let filtered = coins;
+  if (multiExchOnly) filtered = filtered.filter(c => Object.keys(c.e).length >= 2);
+
+  // Determine which exchange(s) to show per coin
+  // rankFilter = 'all' | '1' | '2' | ...
+  const rankNum = rankFilter === 'all' ? null : parseInt(rankFilter);
+
+  // Build rows: for rank mode, one row per coin showing the Nth exchange
+  // For 'all' mode, one row per coin per exchange
+  const coinRows = [];
+  for (const coin of filtered) {
+    const ranks = coinRankings(coin);
+    if (rankNum) {
+      if (rankNum > ranks.length) continue;
+      const pick = ranks[rankNum - 1];
+      coinRows.push({ symbol: coin.s, ex: pick.ex, vols: coin.e[pick.ex], totalCoin: coin.t, rank: rankNum });
+    } else {
+      for (const r of ranks) {
+        coinRows.push({ symbol: coin.s, ex: r.ex, vols: coin.e[r.ex], totalCoin: coin.t, rank: ranks.indexOf(r) + 1 });
+      }
+    }
+  }
+
+  document.getElementById('coin-count').textContent = `${filtered.length} coins` + (rankNum ? ` · showing #${rankNum} exchange` : ` · ${coinRows.length} rows`);
+
+  // Global max log for color scale (across exchange summary)
+  const allExchVols = exchanges.flatMap(ex => exchDaily[ex]);
+  const maxLogExch = Math.log10(Math.max(...allExchVols) + 1);
+
+  // Max log for coin-level (use top coin row values)
+  const allCoinVols = coinRows.flatMap(r => r.vols);
+  const maxCoinVal = Math.max(...allCoinVols.filter(v => v > 0), 1);
+  const maxLogCoin = Math.log10(maxCoinVal + 1);
+
+  // Date tick positions
+  const ticks = dateTicks(dates);
+  const tickSet = new Set(ticks);
+
+  // Build HTML
+  let html = '<thead><tr>';
+  html += '<th class="pin-exch">Exch</th>';
+  html += '<th class="pin-sym">Coin</th>';
+  for (let i = 0; i < n; i++) {
+    const d = dates[i];
+    const label = tickSet.has(i) ? d.slice(5) : ''; // MM-DD
+    html += `<th>${label}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  // Exchange summary rows
+  html += '<tr class="section-hdr"><td class="pin-exch"></td><td class="pin-sym">Exchange Summary</td>';
+  for (let i = 0; i < n; i++) html += '<td></td>';
+  html += '</tr>';
+
+  for (const ex of exchanges) {
+    const vols = exchDaily[ex];
+    html += `<tr class="exch-summary"><td class="pin-exch">${EXCH_ABBR[ex] || ex}</td><td class="pin-sym" title="${fmtVolFull(vols.reduce((a, b) => a + b, 0))}">${fmtVol(vols.reduce((a, b) => a + b, 0))}</td>`;
+    for (let i = 0; i < n; i++) {
+      const v = vols[i];
+      const bg = volColor(v, maxLogExch);
+      const cls = v ? 'vc' : 'vc vc-zero';
+      html += `<td class="${cls}" style="${bg ? 'background:' + bg : ''}" title="${dates[i]}: ${fmtVolFull(v)}">${fmtVol(v)}</td>`;
+    }
+    html += '</tr>';
+  }
+
+  // Coin detail rows
+  html += '<tr class="section-hdr"><td class="pin-exch"></td><td class="pin-sym">Coin Detail</td>';
+  for (let i = 0; i < n; i++) html += '<td></td>';
+  html += '</tr>';
+
+  for (const row of coinRows) {
+    html += `<tr class="coin-row">`;
+    html += `<td class="pin-exch">${EXCH_ABBR[row.ex] || row.ex}</td>`;
+    html += `<td class="pin-sym sym" title="${row.symbol} total: ${fmtVolFull(row.totalCoin)}">${row.symbol}</td>`;
+    for (let i = 0; i < n; i++) {
+      const v = row.vols[i];
+      const bg = volColor(v, maxLogCoin);
+      const cls = v ? 'vc' : 'vc vc-zero';
+      html += `<td class="${cls}" style="${bg ? 'background:' + bg : ''}" title="${dates[i]}: ${fmtVolFull(v)}">${fmtVol(v)}</td>`;
+    }
+    html += '</tr>';
+  }
+
+  html += '</tbody>';
+  document.getElementById('volTable').innerHTML = html;
+}
+
+// ── Load data ──
+fetch('volume.json')
+  .then(r => r.json())
+  .then(d => {
+    DATA = d;
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('volWrap').style.display = 'block';
+    render();
+  })
+  .catch(e => {
+    document.getElementById('loading').textContent = 'Error loading data: ' + e.message;
+  });
+</script>
+</body>
+</html>
