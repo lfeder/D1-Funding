@@ -30,6 +30,7 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 
 /* Header row with date ticks */
 .date-header { display: flex; align-items: flex-end; padding: 0 0 2px 0; border-bottom: 2px solid #bbb; margin-bottom: 0; }
+.date-header .col-num { width: 24px; min-width: 24px; }
 .date-header .col-exch { width: 40px; min-width: 40px; }
 .date-header .col-sym { width: 56px; min-width: 56px; }
 .date-header .col-avg { width: 52px; min-width: 52px; }
@@ -39,6 +40,7 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 /* Rows */
 .vol-row { display: flex; align-items: center; height: 16px; border-bottom: 1px solid #e8e8e2; }
 .vol-row:hover { background: #eeeee8; }
+.vol-row .col-num { width: 24px; min-width: 24px; font-size: 9px; padding: 0 2px 0 4px; color: #999; text-align: right; }
 .vol-row .col-exch { width: 40px; min-width: 40px; font-size: 10px; padding: 0 4px; color: #666; }
 .vol-row .col-sym { width: 56px; min-width: 56px; font-size: 10px; padding: 0 4px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; }
 .vol-row .col-avg { width: 52px; min-width: 52px; font-size: 9px; padding: 0 4px; text-align: right; color: #444; }
@@ -60,7 +62,7 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
 <h2 style="font-size:14px">Daily Volume Viewer</h2>
-<div style="font-size:10px;font-family:monospace;color:#222">v: 03-24 20:29</div>
+<div style="font-size:10px;font-family:monospace;color:#222">v: 03-24 20:34</div>
 </div>
 <p class="sub">Daily perpetual-swap volume (quote USD) by exchange &amp; coin &nbsp;|&nbsp; Mar 2025 – Mar 2026</p>
 
@@ -100,6 +102,7 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 <div id="loading">Loading volume.json…</div>
 <div id="viewer" class="viewer" style="display:none">
   <div class="date-header" id="dateHeader">
+    <div class="col-num">#</div>
     <div class="col-exch">Ex</div>
     <div class="col-sym">Coin</div>
     <div class="col-avg">Avg</div>
@@ -296,7 +299,7 @@ function render() {
     const avg = avgSlice(sr.vols, start, end);
     const row = document.createElement('div');
     row.className = 'vol-row exch-summary';
-    row.innerHTML = `<div class="col-exch">${sr.label}</div><div class="col-sym"></div><div class="col-avg" title="${fmtFull(avg)}/day">${fmtVol(avg)}</div><div class="col-bar"><canvas style="image-rendering:pixelated"></canvas></div>`;
+    row.innerHTML = `<div class="col-num"></div><div class="col-exch">${sr.label}</div><div class="col-sym"></div><div class="col-avg" title="${fmtFull(avg)}/day">${fmtVol(avg)}</div><div class="col-bar"><canvas style="image-rendering:pixelated"></canvas></div>`;
     container.appendChild(row);
     paintBar(row.querySelector('canvas'), sr.vols, start, end, sumRgb);
     const barDiv = row.querySelector('.col-bar');
@@ -307,14 +310,14 @@ function render() {
   // Separator
   const sep = document.createElement('div');
   sep.className = 'vol-row section-hdr';
-  sep.innerHTML = `<div style="padding:0 4px">Coins</div>`;
+  sep.innerHTML = `<div class="col-num"></div><div style="padding:0 4px">Coins</div>`;
   container.appendChild(sep);
 
   // Coin rows
-  for (const r of rows) {
+  for (let ri = 0; ri < rows.length; ri++) { const r = rows[ri];
     const row = document.createElement('div');
     row.className = 'vol-row';
-    row.innerHTML = `<div class="col-exch">${EXCH_ABBR[r.ex] || r.ex}</div><div class="col-sym" title="${r.symbol}">${r.symbol}</div><div class="col-avg" title="${fmtFull(r.avg)}/day">${fmtVol(r.avg)}</div><div class="col-bar"><canvas style="image-rendering:pixelated"></canvas></div>`;
+    row.innerHTML = `<div class="col-num">${ri + 1}</div><div class="col-exch">${EXCH_ABBR[r.ex] || r.ex}</div><div class="col-sym" title="${r.symbol}">${r.symbol}</div><div class="col-avg" title="${fmtFull(r.avg)}/day">${fmtVol(r.avg)}</div><div class="col-bar"><canvas style="image-rendering:pixelated"></canvas></div>`;
     container.appendChild(row);
     paintBar(row.querySelector('canvas'), r.vols, start, end);
     const barDiv = row.querySelector('.col-bar');
