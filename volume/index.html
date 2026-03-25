@@ -52,6 +52,10 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 .vol-row.exch-summary .col-sym { font-size: 11px; }
 .vol-row.section-hdr { background: #d8dce4; font-weight: bold; height: 18px; justify-content: center; font-size: 10px; }
 
+/* HL60 highlight */
+.vol-row.hl60-row { background: #ddddd8 !important; }
+.vol-row.hl60-row:hover { background: #d0d0c8 !important; }
+
 /* Tooltip */
 .bar-tip { display: none; position: fixed; background: #333; color: #fff; padding: 4px 8px; border-radius: 3px; font-size: 10px; white-space: nowrap; z-index: 100; pointer-events: none; font-family: monospace; }
 
@@ -63,7 +67,7 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
 
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
 <h2 style="font-size:14px">Daily Volume Viewer</h2>
-<div style="font-size:10px;font-family:monospace;color:#222">v: 03-24 21:52</div>
+<div style="font-size:10px;font-family:monospace;color:#222">v: 03-25 09:13</div>
 </div>
 <p class="sub">Daily perpetual-swap volume (quote USD) by exchange &amp; coin &nbsp;|&nbsp; Mar 2025 – Mar 2026</p>
 
@@ -87,6 +91,12 @@ p.sub { color: #666; font-size: 10px; margin-bottom: 10px; }
   <button class="venue-btn active" data-venue="all" onclick="setVenue('all')">All</button>
   <button class="venue-btn" data-venue="cex" onclick="setVenue('cex')">CEX</button>
   <button class="venue-btn" data-venue="dex" onclick="setVenue('dex')">DEX</button>
+  <div class="sep"></div>
+  <span class="label">HL60:</span>
+  <button class="hl60-btn active" data-hl="all" onclick="setHl60('all')">All</button>
+  <button class="hl60-btn" data-hl="hl" onclick="setHl60('hl')">HL</button>
+  <button class="hl60-btn" data-hl="60" onclick="setHl60('60')">60</button>
+  <button class="hl60-btn" data-hl="ex60" onclick="setHl60('ex60')">ex60</button>
   <div class="sep"></div>
   <span class="label">Period:</span>
   <button class="range-btn" data-range="30" onclick="setRange(30)">30d</button>
@@ -125,6 +135,7 @@ let rankFilter = '2';
 let exchFilter = null;
 let dateRange = 0; // 0 = all
 let venueFilter = 'all'; // 'all', 'dex', 'cex'
+let hl60Filter = 'all'; // 'all', 'hl', '60', 'ex60'
 
 const EXCH_ABBR = { binance: 'BN', bybit: 'BB', okx: 'OKX', hyperliquid: 'HL', aster: 'AS', lighter: 'LT' };
 const DEX_SET = new Set(['hyperliquid', 'aster', 'lighter']);
@@ -183,6 +194,11 @@ function setVenue(v) {
   document.querySelectorAll('.exch-btn').forEach(b => b.classList.remove('active-exch'));
   if (!rankFilter) { rankFilter = '2'; document.querySelector('.rank-btn[data-rank="2"]').classList.add('active'); }
   DATA._dailyRanks = null; // invalidate cache
+  render();
+}
+function setHl60(v) {
+  hl60Filter = v;
+  document.querySelectorAll('.hl60-btn').forEach(b => b.classList.toggle('active', b.dataset.hl === v));
   render();
 }
 function getExchSet() {
@@ -352,9 +368,15 @@ function render() {
     }
   }
 
+  // HL60 filter
+  const hl60Set = DATA.hl60 ? new Set(DATA.hl60) : new Set();
+  const coinList = (hl60Filter === '60') ? coins.filter(c => hl60Set.has(c.s))
+    : (hl60Filter === 'ex60') ? coins.filter(c => !hl60Set.has(c.s))
+    : coins;
+
   // Build one row per coin
   const rows = [];
-  for (const coin of coins) {
+  for (const coin of coinList) {
     let ex, vols;
     if (exchFilter) {
       if (!coin.e[exchFilter]) continue;
@@ -368,7 +390,7 @@ function render() {
       ex = null; // varies per day
     }
     const avg = avgSlice(vols, start, end);
-    rows.push({ symbol: coin.s, ex, vols, avg });
+    rows.push({ symbol: coin.s, ex, vols, avg, isHl60: hl60Set.has(coin.s) });
   }
   rows.sort((a, b) => b.avg - a.avg);
 
@@ -443,7 +465,8 @@ function render() {
   // Coin rows
   for (let ri = 0; ri < rows.length; ri++) { const r = rows[ri];
     const row = document.createElement('div');
-    row.className = 'vol-row';
+    const hl60Class = (hl60Filter === 'hl' && r.isHl60) ? ' hl60-row' : '';
+    row.className = 'vol-row' + hl60Class;
     const exLabel = r.ex ? (EXCH_ABBR[r.ex] || r.ex) : '';
     row.innerHTML = `<div class="col-num">${ri + 1}</div><div class="col-exch">${exLabel}</div><div class="col-sym" title="${r.symbol}">${r.symbol}</div><div class="col-avg" title="${fmtFull(r.avg)}/day">${fmtVol(r.avg)}</div><div class="col-bar"><canvas style="image-rendering:pixelated"></canvas></div>`;
     container.appendChild(row);

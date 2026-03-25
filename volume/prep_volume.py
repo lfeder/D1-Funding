@@ -59,11 +59,17 @@ for sym, exmap in coin_exch.items():
     coins.append({"s": sym, "t": int(total), "e": exmap})
 coins.sort(key=lambda c: c["t"], reverse=True)
 
+# Load HL60 symbols
+symbols_path = Path(__file__).resolve().parent.parent / "raw" / "symbols.json"
+with open(symbols_path) as f:
+    hl60 = [s["base"] for s in json.load(f)["symbols"]]
+
 out = {
     "dates": dates,
     "exchanges": exchanges,
     "exchDaily": exch_daily,
     "coins": coins,
+    "hl60": hl60,
 }
 
 with open(OUT, "w", encoding="utf-8") as f:
